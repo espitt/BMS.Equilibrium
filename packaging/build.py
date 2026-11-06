@@ -5,7 +5,7 @@
     python packaging/build.py manifest --version 1.2.3 --repo owner/name --dir release
 
 ``build`` creates, in ./release, this platform's app archive and setup program.
-``manifest`` hashes the app archives from every platform into manifest.json.
+``manifest`` hashes the app and setup files from every platform into manifest.json.
 """
 
 from __future__ import annotations
@@ -44,6 +44,7 @@ def pyinstaller(name: str, entry: str, paths: str, *options: str) -> None:
             "--distpath", str(DIST),
             "--workpath", str(WORK),
             "--specpath", str(WORK),
+            "--icon", str(PACKAGING / "assets" / ("icon.icns" if sys.platform == "darwin" else "icon.ico")),
             *options,
             str(PACKAGING / entry),
         ],
@@ -66,13 +67,21 @@ def build(version: str, repo: str) -> None:
     try:
         stamp(APP_INIT, r"^__version__ = .*$", f'__version__ = "{version}"')
         stamp(SETUP_INIT, r"^GITHUB_REPO = .*$", f'GITHUB_REPO = "{repo}"')
-        pyinstaller("Equilibrium", "entry_app.py", "app", "--onedir")
+        # The app reuses the installer's download and checksum code for updates.
+        pyinstaller(
+            "Equilibrium", "entry_app.py", "app", "--onedir",
+            "--add-data", f"{ROOT / 'app' / 'equilibrium' / 'assets'}{os.pathsep}equilibrium/assets",
+            "--paths", str(ROOT / "installer"),
+            "--hidden-import", "certifi", "--collect-data", "certifi",
+        )
         # A single file everywhere except macOS, where the .app bundle is the unit.
         # --hidden-import because certifi is imported inside a function.
         pyinstaller(
             SETUP_NAME, "entry_setup.py", "installer",
             "--onedir" if key.startswith("macos") else "--onefile",
             "--hidden-import", "certifi", "--collect-data", "certifi",
+            "--add-data",
+            f"{ROOT / 'installer' / 'equilibrium_setup' / 'assets'}{os.pathsep}equilibrium_setup/assets",
             "--exclude-module", "PySide6",
         )
     finally:
@@ -125,22 +134,30 @@ def package_setup(key: str) -> None:
             tar.add(DIST / SETUP_NAME, arcname=SETUP_NAME)
 
 
+def collect(directory: Path, pattern: str) -> dict:
+    """Describe each file matching ``pattern``, keyed by the platform it captures."""
+    found = {}
+    for path in sorted(directory.iterdir()):
+        match = re.fullmatch(pattern, path.name)
+        if match:
+            found[match.group(1)] = {
+                "name": path.name,
+                "sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
+                "size": path.stat().st_size,
+            }
+    return found
+
+
 def manifest(version: str, repo: str, directory: Path) -> None:
-    prefix = f"Equilibrium-{version}-"
-    assets = {}
-    for archive in sorted(directory.glob(f"{prefix}*.tar.gz")):
-        key = archive.name[len(prefix):-len(".tar.gz")]
-        assets[key] = {
-            "name": archive.name,
-            "sha256": hashlib.sha256(archive.read_bytes()).hexdigest(),
-            "size": archive.stat().st_size,
-        }
-    if not assets:
-        raise SystemExit(f"No app archives found in {directory}")
+    assets = collect(directory, rf"Equilibrium-{re.escape(version)}-(.+)\.tar\.gz")
+    setups = collect(directory, rf"{SETUP_NAME}-(.+?)(?:\.exe|\.zip|\.tar\.gz)")
+    if not assets or set(assets) != set(setups):
+        raise SystemExit(f"Expected matching app and setup files in {directory}")
     document = {
         "version": version,
         "base_url": f"https://github.com/{repo}/releases/download/v{version}",
         "assets": assets,
+        "setups": setups,
     }
     (directory / MANIFEST_NAME).write_text(json.dumps(document, indent=2), encoding="utf-8")
 

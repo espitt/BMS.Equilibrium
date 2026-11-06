@@ -12,6 +12,7 @@ import ssl
 import sys
 import tarfile
 import threading
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -22,9 +23,12 @@ from typing import Callable, Optional
 APP_NAME = "Equilibrium"
 MARKER_NAME = ".equilibrium-install.json"
 MANIFEST_NAME = "manifest.json"
+ICON_PATH = Path(__file__).parent / "assets" / "icon.png"
 USER_AGENT = "EquilibriumSetup"
 TIMEOUT_SECONDS = 30
 CHUNK_SIZE = 64 * 1024
+RENAME_ATTEMPTS = 5
+RENAME_DELAY_SECONDS = 1.0
 
 
 class InstallError(Exception):
@@ -72,9 +76,7 @@ def manifest_url(repo: str) -> str:
     return f"https://github.com/{repo}/releases/latest/download/{MANIFEST_NAME}"
 
 
-def fetch_release(url: str, key: Optional[str] = None) -> Release:
-    """Download the release manifest and pick the entry for this platform."""
-    key = key or platform_key()
+def _load_manifest(url: str) -> dict:
     try:
         with _open(url) as response:
             manifest = json.load(response)
@@ -88,26 +90,38 @@ def fetch_release(url: str, key: Optional[str] = None) -> Release:
         ) from error
     except ValueError as error:
         raise InstallError("The release information could not be read.") from error
+    return manifest
 
+
+def _select(manifest: dict, group: str, key: str) -> Release:
     try:
         version = manifest["version"]
-        base_url = manifest["base_url"]
-        assets = manifest["assets"]
-        if key not in assets:
-            available = ", ".join(sorted(assets))
+        entries = manifest[group]
+        if key not in entries:
+            available = ", ".join(sorted(entries))
             raise InstallError(
                 f"Equilibrium {version} is not available for {key}. "
                 f"Available: {available}."
             )
-        asset = assets[key]
+        entry = entries[key]
         return Release(
             version=version,
-            url=f"{base_url}/{urllib.parse.quote(asset['name'])}",
-            sha256=asset["sha256"].lower(),
-            size=int(asset["size"]),
+            url=f"{manifest['base_url']}/{urllib.parse.quote(entry['name'])}",
+            sha256=entry["sha256"].lower(),
+            size=int(entry["size"]),
         )
     except (KeyError, TypeError, ValueError, AttributeError) as error:
         raise InstallError("The release information is incomplete.") from error
+
+
+def fetch_release(url: str, key: Optional[str] = None) -> Release:
+    """Find the app archive for this platform in the release manifest."""
+    return _select(_load_manifest(url), "assets", key or platform_key())
+
+
+def fetch_setup(url: str, key: Optional[str] = None) -> Release:
+    """Find the setup program for this platform in the release manifest."""
+    return _select(_load_manifest(url), "setups", key or platform_key())
 
 
 def download(
@@ -194,12 +208,7 @@ def install_archive(
 
         had_previous = install_dir.exists()
         if had_previous:
-            try:
-                install_dir.rename(retired)
-            except PermissionError as error:
-                raise InstallError(
-                    f"{APP_NAME} appears to be running. Close it and try again."
-                ) from error
+            _retire(install_dir, retired)
         try:
             staging.rename(install_dir)
         except OSError:
@@ -212,6 +221,21 @@ def install_archive(
         shutil.rmtree(staging, ignore_errors=True)
 
     shutil.rmtree(retired, ignore_errors=True)
+
+
+def _retire(install_dir: Path, retired: Path) -> None:
+    # Windows can hold a folder briefly after a program in it exits, and antivirus
+    # scanners do the same, so give it a few chances before blaming a running app.
+    for attempt in range(RENAME_ATTEMPTS):
+        try:
+            install_dir.rename(retired)
+            return
+        except PermissionError as error:
+            if attempt == RENAME_ATTEMPTS - 1:
+                raise InstallError(
+                    f"{APP_NAME} appears to be running. Close it and try again."
+                ) from error
+            time.sleep(RENAME_DELAY_SECONDS)
 
 
 def extract_archive(archive: Path, destination: Path) -> None:

@@ -1,4 +1,8 @@
-"""The tkinter wizard: welcome, location, progress, finished."""
+"""The tkinter wizard: welcome, location, progress, finished.
+
+With ``update_target`` it instead runs a shorter flow on behalf of the running app:
+wait for the app to close, install the latest release over it, then reopen it.
+"""
 
 from __future__ import annotations
 
@@ -15,11 +19,21 @@ from . import GITHUB_REPO, core, system
 POLL_MS = 50
 
 
+def set_icon(window: tk.Tk) -> None:
+    try:
+        window.iconphoto(True, tk.PhotoImage(master=window, file=str(core.ICON_PATH)))
+    except tk.TclError:
+        pass  # A missing icon is no reason to stop an install.
+
+
 class Wizard(tk.Tk):
-    def __init__(self) -> None:
+    def __init__(self, update_target: Path | None = None, wait_pid: int | None = None) -> None:
         super().__init__()
-        self.title(f"{core.APP_NAME} Setup")
+        self.update_target = update_target
+        self.wait_pid = wait_pid
+        self.title(f"{core.APP_NAME} Update" if update_target else f"{core.APP_NAME} Setup")
         self.geometry("560x380")
+        set_icon(self)
         self.resizable(False, False)
         self.protocol("WM_DELETE_WINDOW", self._on_cancel)
 
@@ -46,7 +60,10 @@ class Wizard(tk.Tk):
         self.back_button.pack(side="right")
 
         self.after(POLL_MS, self._poll)
-        self._show_welcome()
+        if update_target:
+            self._start_update()
+        else:
+            self._show_welcome()
 
     # ---- Page helpers ----------------------------------------------------
 
@@ -97,6 +114,41 @@ class Wizard(tk.Tk):
             pass
         self.after(POLL_MS, self._poll)
 
+    # ---- Update ----------------------------------------------------------
+
+    def _start_update(self) -> None:
+        self._page(f"Updating {core.APP_NAME}")
+        self.status = self._text(f"Waiting for {core.APP_NAME} to close...")
+        self.bar = ttk.Progressbar(self.body)
+        self.bar.pack(fill="x")
+        self._buttons()
+        self.cancel_button.configure(state="normal")
+        self.cancel.clear()
+        self.busy = True
+        target, pid = self.update_target, self.wait_pid
+
+        def work() -> None:
+            if pid is not None:
+                system.wait_for_exit(pid, self.cancel)
+            release = core.fetch_release(core.manifest_url(GITHUB_REPO))
+            self.events.put(("update_release", release))
+            self._install(target, release, desktop=False)
+
+        self._run(work)
+
+    def _on_update_release(self, release: core.Release) -> None:
+        self.release = release
+        self.bar.configure(maximum=release.size)
+
+    def _leave_without_installing(self) -> None:
+        """Close the wizard. During an update, reopen the version the user was using."""
+        if self.update_target and system.app_executable(self.update_target).exists():
+            try:
+                system.launch(self.update_target)
+            except OSError:
+                pass  # It can still be opened from the Start Menu or Applications.
+        self.destroy()
+
     # ---- Welcome ---------------------------------------------------------
 
     def _show_welcome(self) -> None:
@@ -117,7 +169,7 @@ class Wizard(tk.Tk):
     def _on_release(self, release: core.Release) -> None:
         self.busy = False
         if self.cancel.is_set():
-            self.destroy()
+            self._leave_without_installing()
             return
         self.release = release
         megabytes = release.size / 1_000_000
@@ -217,6 +269,9 @@ class Wizard(tk.Tk):
         self.busy = False
         self.committing = False
         self.finished = True
+        if self.update_target:
+            self._finish(target)
+            return
         self._page("Installation complete")
         self._text(f"{core.APP_NAME} {self.release.version} is installed.")
         ttk.Checkbutton(
@@ -239,15 +294,15 @@ class Wizard(tk.Tk):
         self.busy = False
         self.committing = False
         if self.cancel.is_set():
-            self.destroy()
+            self._leave_without_installing()
             return
         self._page("Setup could not finish")
         self._text(message)
         self.cancel_button.configure(state="normal")
-        self._buttons("Try again", self._show_welcome)
+        self._buttons("Try again", self._start_update if self.update_target else self._show_welcome)
 
     def _on_cancelled(self) -> None:
-        self.destroy()
+        self._leave_without_installing()
 
     def _on_cancel(self) -> None:
         if self.committing:
@@ -257,7 +312,7 @@ class Wizard(tk.Tk):
         elif messagebox.askyesno("Setup", f"Cancel {core.APP_NAME} Setup?", parent=self):
             self.cancel.set()
             if not self.busy:
-                self.destroy()
+                self._leave_without_installing()
 
 
 def run_wizard() -> int:
@@ -265,9 +320,15 @@ def run_wizard() -> int:
     return 0
 
 
+def run_update(target: Path, wait_pid: int | None) -> int:
+    Wizard(target, wait_pid).mainloop()
+    return 0
+
+
 def run_uninstall(install_dir: Path) -> int:
     root = tk.Tk()
     root.withdraw()
+    set_icon(root)
     title = f"Uninstall {core.APP_NAME}"
     if not messagebox.askyesno(title, f"Remove {core.APP_NAME} from {install_dir}?"):
         return 0

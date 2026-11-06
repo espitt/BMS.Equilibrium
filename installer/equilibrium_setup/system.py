@@ -11,9 +11,18 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import threading
+import time
 from pathlib import Path
 
-from .core import APP_NAME, MARKER_NAME, InstallError, add_shortcuts_to_marker, read_marker
+from .core import (
+    APP_NAME,
+    MARKER_NAME,
+    Cancelled,
+    InstallError,
+    add_shortcuts_to_marker,
+    read_marker,
+)
 
 IS_WINDOWS = sys.platform == "win32"
 IS_MACOS = sys.platform == "darwin"
@@ -46,19 +55,67 @@ def app_executable(install_dir: Path) -> Path:
     return install_dir / APP_NAME
 
 
-def launch(install_dir: Path) -> None:
-    """Start the app free of the frozen wizard's library paths, which would break it."""
+def child_environment() -> dict:
+    """Environment for starting another frozen program from a frozen program.
+
+    Without this the child would inherit library paths that point into this
+    program's own bundle, and could load the wrong libraries or fail to start.
+    """
     env = {**os.environ, "PYINSTALLER_RESET_ENVIRONMENT": "1"}
     if "LD_LIBRARY_PATH_ORIG" in env:
         env["LD_LIBRARY_PATH"] = env["LD_LIBRARY_PATH_ORIG"]
     else:
         env.pop("LD_LIBRARY_PATH", None)
+    for name in ("QT_PLUGIN_PATH", "QML2_IMPORT_PATH"):
+        env.pop(name, None)
 
     if IS_WINDOWS:
         import ctypes
 
         ctypes.windll.kernel32.SetDllDirectoryW(None)
+    return env
 
+
+def _is_running(pid: int) -> bool:
+    if IS_WINDOWS:
+        import ctypes
+        from ctypes import wintypes
+
+        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        kernel32.OpenProcess.restype = wintypes.HANDLE
+        kernel32.OpenProcess.argtypes = (wintypes.DWORD, wintypes.BOOL, wintypes.DWORD)
+        kernel32.WaitForSingleObject.argtypes = (wintypes.HANDLE, wintypes.DWORD)
+        kernel32.CloseHandle.argtypes = (wintypes.HANDLE,)
+        handle = kernel32.OpenProcess(0x00100000, False, pid)  # SYNCHRONIZE
+        if not handle:
+            return False
+        try:
+            return kernel32.WaitForSingleObject(handle, 0) == 0x00000102  # WAIT_TIMEOUT
+        finally:
+            kernel32.CloseHandle(handle)
+    try:
+        os.kill(pid, 0)  # Signal 0 only checks that the process exists.
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    return True
+
+
+def wait_for_exit(pid: int, cancel: threading.Event, timeout: float = 30.0) -> bool:
+    """Wait for a process to end. Returns False if it is still running at the timeout."""
+    deadline = time.monotonic() + timeout
+    while _is_running(pid):
+        if cancel.is_set():
+            raise Cancelled()
+        if time.monotonic() > deadline:
+            return False
+        time.sleep(0.1)
+    return True
+
+
+def launch(install_dir: Path) -> None:
+    env = child_environment()
     if IS_MACOS:
         subprocess.Popen(["open", str(install_dir)], env=env)
     else:
@@ -186,6 +243,7 @@ def _desktop_entry(install_dir: Path) -> str:
         f"Name={APP_NAME}\n"
         "Comment=Battery management\n"
         f"Exec={shlex.quote(str(app_executable(install_dir)))}\n"
+        f"Icon={install_dir / '_internal' / 'equilibrium' / 'assets' / 'icon.png'}\n"
         "Terminal=false\n"
         "Categories=Utility;\n"
     )

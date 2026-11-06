@@ -13,9 +13,16 @@ the latest version of the app and installs it for your user account, with no adm
 | macOS   | `EquilibriumSetup-macos-arm64.zip`     | `~/Applications/Equilibrium.app`     | Move to Trash                 |
 | Linux   | `EquilibriumSetup-linux-x64.tar.gz`    | `~/.local/share/Equilibrium`         | Run `uninstall` in that folder|
 
+## Updates
+
+A few seconds after opening, and from **Help > Check for Updates**, the app looks at the latest
+release. If it is newer, the app asks before doing anything. Choosing **Install now** downloads the
+setup program, closes the app, installs the update and reopens the app. If the update fails or is
+cancelled, the previous version reopens.
+
 ## Project layout
 
-- `app/equilibrium/`: the application
+- `app/equilibrium/`: the application (`updater.py` and `update_ui.py` handle updates)
 - `installer/equilibrium_setup/`: the setup wizard (standard library and `certifi` only, to stay small)
 - `packaging/build.py`: builds release files with PyInstaller
 - `.github/workflows/release.yml`: builds every platform and publishes the release

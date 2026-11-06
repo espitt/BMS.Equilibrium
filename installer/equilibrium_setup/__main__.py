@@ -1,5 +1,6 @@
-"""Entry point for both the setup wizard and the installed uninstaller."""
+"""Entry point for the setup wizard, the installed uninstaller and app updates."""
 
+import argparse
 import sys
 from pathlib import Path
 
@@ -14,7 +15,7 @@ def main() -> int:
         core._ssl_context()
         import certifi  # noqa: F401
 
-        return 0
+        return 0 if core.ICON_PATH.is_file() else 1
 
     if sys.platform == "win32":
         # Keeps text sharp on high-DPI displays rather than letting Windows blur it.
@@ -27,8 +28,17 @@ def main() -> int:
 
     from equilibrium_setup import wizard
 
-    if "--uninstall" in sys.argv:
+    parser = argparse.ArgumentParser(add_help=False)
+    parser.add_argument("--uninstall", action="store_true")
+    parser.add_argument("--update", action="store_true")
+    parser.add_argument("--target", type=Path)
+    parser.add_argument("--wait-pid", type=int)
+    args, _ = parser.parse_known_args()
+
+    if args.uninstall:
         return wizard.run_uninstall(Path(sys.executable).resolve().parent)
+    if args.update and args.target:
+        return wizard.run_update(args.target, args.wait_pid)
     return wizard.run_wizard()
 
 
