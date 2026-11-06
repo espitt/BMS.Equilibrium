@@ -281,7 +281,10 @@ class WizardUpdateTests(ServerTest):
             _, closed = self.run_wizard(target, lambda w: False)
         self.assertTrue(closed)
         self.assertEqual((target / "Equilibrium.exe").read_bytes(), b"new")
-        self.assertEqual(core.read_marker(target)["version"], "0.2.0")
+        if system.supports_uninstaller():
+            self.assertEqual(core.read_marker(target)["version"], "0.2.0")
+        else:  # macOS: extra files inside an app bundle would break code signing.
+            self.assertFalse((target / core.MARKER_NAME).exists())
         integrate.assert_called_once()
         launch.assert_called_once_with(target)
 

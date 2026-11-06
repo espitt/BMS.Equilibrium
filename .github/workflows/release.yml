@@ -11,7 +11,8 @@ permissions:
 jobs:
   build:
     strategy:
-      fail-fast: true
+      # Let every platform finish, so one run shows all failures. Publishing still needs all three.
+      fail-fast: false
       matrix:
         os: [windows-latest, macos-latest, ubuntu-24.04]
     runs-on: ${{ matrix.os }}
