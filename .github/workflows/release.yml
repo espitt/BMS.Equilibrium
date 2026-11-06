@@ -1,0 +1,63 @@
+name: Release
+
+# Pushing a tag such as v1.2.3 builds every platform and publishes the release.
+on:
+  push:
+    tags: ["v*.*.*"]
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    strategy:
+      fail-fast: true
+      matrix:
+        os: [windows-latest, macos-latest, ubuntu-24.04]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Linux libraries for Qt and Tk
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libegl1 libxkbcommon0 libdbus-1-3 libfontconfig1 libglib2.0-0 tk
+
+      - run: python -m pip install -r requirements-build.txt
+      - run: python -m unittest discover -s tests -v
+
+      - name: Build
+        shell: bash
+        run: python packaging/build.py build --version "${GITHUB_REF_NAME#v}" --repo "$GITHUB_REPOSITORY"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-${{ matrix.os }}
+          path: release/*
+          if-no-files-found: error
+
+  publish:
+    # Publishing once, after all builds pass, means "latest" is never incomplete.
+    needs: build
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/download-artifact@v4
+        with:
+          path: release
+          merge-multiple: true
+      - name: Write the manifest
+        run: python packaging/build.py manifest --version "${GITHUB_REF_NAME#v}" --repo "$GITHUB_REPOSITORY" --dir release
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" release/* --title "Equilibrium ${GITHUB_REF_NAME#v}" --generate-notes
