@@ -13,7 +13,7 @@ import tempfile
 import threading
 import time
 import unittest
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 from unittest import mock
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -511,11 +511,12 @@ class SplashTests(unittest.TestCase):
     def test_custom_image_for_known_windows_users_only(self):
         from equilibrium import splash
 
-        adam = splash.user_image(Path(r"C:\Users\Adam"), "win32")
+        # PureWindowsPath splits on backslashes on every platform, like Path.home() does on Windows.
+        adam = splash.user_image(PureWindowsPath(r"C:\Users\Adam"), "win32")
         self.assertIsNotNone(adam)
         self.assertTrue(adam.is_file())
-        self.assertEqual(splash.user_image(Path(r"C:\Users\adam"), "win32"), adam)
-        self.assertIsNone(splash.user_image(Path(r"C:\Users\Someone"), "win32"))
+        self.assertEqual(splash.user_image(PureWindowsPath(r"C:\Users\adam"), "win32"), adam)
+        self.assertIsNone(splash.user_image(PureWindowsPath(r"C:\Users\Someone"), "win32"))
         self.assertIsNone(splash.user_image(Path("/Users/Adam"), "darwin"))
 
     def test_custom_image_is_shown(self):

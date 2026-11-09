@@ -2,7 +2,7 @@
 
 import sys
 from collections.abc import Callable
-from pathlib import Path
+from pathlib import Path, PurePath
 
 from PySide6.QtCore import QRectF, Qt, QTimer
 from PySide6.QtGui import QIcon, QPainter, QPainterPath, QPixmap
@@ -21,7 +21,7 @@ USER_IMAGES = {
 }
 
 
-def user_image(home: Path | None = None, platform: str = sys.platform) -> Path | None:
+def user_image(home: PurePath | None = None, platform: str = sys.platform) -> Path | None:
     """The custom splash image for the signed-in Windows user, if they have one."""
     if platform != "win32":
         return None
