@@ -508,21 +508,32 @@ class SplashTests(unittest.TestCase):
             startup.ready()
         self.assertTrue(self.window.isVisible())
 
-    def test_custom_image_for_known_windows_users_only(self):
-        from equilibrium import splash
+    def test_custom_files_for_known_windows_users_only(self):
+        from equilibrium import personal
 
         # PureWindowsPath splits on backslashes on every platform, like Path.home() does on Windows.
-        adam = splash.user_image(PureWindowsPath(r"C:\Users\Adam"), "win32")
-        self.assertIsNotNone(adam)
-        self.assertTrue(adam.is_file())
-        self.assertEqual(splash.user_image(PureWindowsPath(r"C:\Users\adam"), "win32"), adam)
-        self.assertIsNone(splash.user_image(PureWindowsPath(r"C:\Users\Someone"), "win32"))
-        self.assertIsNone(splash.user_image(Path("/Users/Adam"), "darwin"))
+        adam, other = PureWindowsPath(r"C:\Users\Adam"), PureWindowsPath(r"C:\Users\Someone")
+        for kind in ("image", "sound"):
+            found = personal.asset(kind, adam, "win32")
+            self.assertIsNotNone(found, kind)
+            self.assertTrue(found.is_file())
+            self.assertEqual(personal.asset(kind, PureWindowsPath(r"C:\Users\adam"), "win32"), found)
+            self.assertIsNone(personal.asset(kind, other, "win32"))
+            self.assertIsNone(personal.asset(kind, Path("/Users/Adam"), "darwin"))
+
+    def test_every_listed_file_exists(self):
+        from equilibrium import personal
+
+        for files in personal.USERS.values():
+            for filename in files.values():
+                self.assertTrue((personal.ASSETS_DIR / filename).is_file(), filename)
 
     def test_custom_image_is_shown(self):
+        from equilibrium import personal
+
         splash, startup = self.make()
         icon_size = startup.screen.pixmap().deviceIndependentSize()
-        with mock.patch.object(splash, "user_image", return_value=splash.USER_IMAGES_DIR / "adam.jpg"):
+        with mock.patch.object(personal, "asset", return_value=personal.ASSETS_DIR / "adam.jpg"):
             _, startup = self.make()
         size = startup.screen.pixmap().deviceIndependentSize()
         self.assertEqual(round(size.height()), splash.PHOTO_HEIGHT)
@@ -539,6 +550,94 @@ class SplashTests(unittest.TestCase):
         actions = []
         startup.after_reveal(lambda: actions.append("late prompt"))
         self.assertEqual(actions, ["late prompt"])
+
+
+class FakeVolume:
+    def __init__(self, level=0.3, muted=True):
+        self.level, self.muted, self.closed = level, muted, False
+
+    def get(self):
+        return self.level, self.muted
+
+    def set(self, level, muted):
+        self.level, self.muted = level, muted
+
+    def close(self):
+        self.closed = True
+
+
+class StartupSoundTests(unittest.TestCase):
+    """Fakes winsound and the speakers, so nothing is played or changed for real."""
+
+    @classmethod
+    def setUpClass(cls):
+        try:
+            from PySide6.QtWidgets import QApplication
+        except ImportError as error:
+            raise unittest.SkipTest(f"PySide6 not installed: {error}")
+        cls.app = QApplication.instance() or QApplication([])
+
+    def play(self, volume):
+        from equilibrium import personal, startup_sound
+
+        winsound = mock.MagicMock()
+        patches = [
+            mock.patch.dict(sys.modules, {"winsound": winsound}),
+            mock.patch.object(startup_sound.sys, "platform", "win32"),
+        ]
+        if isinstance(volume, Exception):
+            patches.append(mock.patch.object(startup_sound, "SystemVolume", side_effect=volume))
+        else:
+            patches.append(mock.patch.object(startup_sound, "SystemVolume", return_value=volume))
+        for patch in patches:
+            patch.start()
+            self.addCleanup(patch.stop)
+        sound = startup_sound.StartupSound(personal.ASSETS_DIR / "adam.wav")
+        sound.play()
+        return sound, winsound
+
+    def test_turns_the_volume_up_and_restores_it_afterwards(self):
+        volume = FakeVolume(0.3, muted=True)
+        sound, winsound = self.play(volume)
+        self.assertEqual(volume.get(), (1.0, False))
+        winsound.PlaySound.assert_called_once()
+        self.assertTrue(sound.playing)
+        sound.stop()
+        self.assertEqual(volume.get(), (0.3, True))
+        self.assertTrue(volume.closed)
+        winsound.PlaySound.assert_called_with(None, 0)
+
+    def test_a_volume_the_user_changed_is_left_alone(self):
+        volume = FakeVolume(0.3, muted=False)
+        sound, _ = self.play(volume)
+        volume.set(0.5, False)
+        sound.stop()
+        self.assertEqual(volume.get(), (0.5, False))
+
+    def test_still_plays_when_the_volume_cannot_be_changed(self):
+        sound, winsound = self.play(OSError("no speakers"))
+        winsound.PlaySound.assert_called_once()
+        sound.stop()
+
+    def test_nothing_happens_off_windows(self):
+        from equilibrium import personal, startup_sound
+
+        with mock.patch.object(startup_sound.sys, "platform", "darwin"), mock.patch.object(
+            startup_sound, "SystemVolume"
+        ) as volume:
+            sound = startup_sound.StartupSound(personal.ASSETS_DIR / "adam.wav")
+            sound.play()
+        volume.assert_not_called()
+        self.assertFalse(sound.playing)
+
+    def test_sound_starts_three_seconds_in(self):
+        import wave
+
+        from equilibrium import personal
+
+        with wave.open(str(personal.ASSETS_DIR / "adam.wav"), "rb") as audio:
+            seconds = audio.getnframes() / audio.getframerate()
+        self.assertAlmostEqual(seconds, 182.1 - 3, delta=0.2)  # The original runs 3:02.1.
 
 
 class IconTests(unittest.TestCase):

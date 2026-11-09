@@ -22,7 +22,8 @@ cancelled, the previous version reopens.
 
 ## Project layout
 
-- `app/equilibrium/`: the application (`updater.py` and `update_ui.py` handle updates)
+- `app/equilibrium/`: the application (`updater.py` and `update_ui.py` handle updates;
+  `personal.py` lists per-user splash images and startup sounds, kept in `assets/splash/`)
 - `installer/equilibrium_setup/`: the setup wizard (standard library and `certifi` only, to stay small)
 - `packaging/build.py`: builds release files with PyInstaller
 - `.github/workflows/release.yml`: builds every platform and publishes the release

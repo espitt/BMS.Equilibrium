@@ -1,35 +1,19 @@
 """Startup splash screen, shown while the app starts and checks for updates."""
 
-import sys
 from collections.abc import Callable
-from pathlib import Path, PurePath
+from pathlib import Path
 
 from PySide6.QtCore import QRectF, Qt, QTimer
 from PySide6.QtGui import QIcon, QPainter, QPainterPath, QPixmap
 from PySide6.QtWidgets import QApplication, QMainWindow, QSplashScreen
+
+from equilibrium import personal
 
 MIN_DURATION_MS = 2500  # Always shown at least this long, so it never just flickers.
 MAX_DURATION_MS = 8000  # Never held longer than this; a slow check finishes behind the window.
 ICON_SIZE = 320  # Logical pixels; images are rendered at the screen's full resolution.
 PHOTO_HEIGHT = 480
 PHOTO_CORNER_RADIUS = 16
-
-USER_IMAGES_DIR = Path(__file__).parent / "assets" / "splash"
-# Windows account folder name (C:\Users\<name>), lower case -> image in USER_IMAGES_DIR.
-USER_IMAGES = {
-    "adam": "adam.jpg",
-}
-
-
-def user_image(home: PurePath | None = None, platform: str = sys.platform) -> Path | None:
-    """The custom splash image for the signed-in Windows user, if they have one."""
-    if platform != "win32":
-        return None
-    name = (home or Path.home()).name.lower()
-    image = USER_IMAGES.get(name)
-    if image is None or not (USER_IMAGES_DIR / image).is_file():
-        return None
-    return USER_IMAGES_DIR / image
 
 
 def _ratio() -> float:
@@ -72,7 +56,7 @@ def _photo_pixmap(path: Path) -> QPixmap | None:
 
 def _pixmap(icon: QIcon) -> QPixmap:
     """The current user's own image if they have one, otherwise the app icon."""
-    path = user_image()
+    path = personal.asset("image")
     photo = _photo_pixmap(path) if path is not None else None
     return photo if photo is not None else _icon_pixmap(icon)
 
