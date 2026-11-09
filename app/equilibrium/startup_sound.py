@@ -35,8 +35,12 @@ _IID_IMMDEVICE_ENUMERATOR = _guid("A95664D2-9614-4F35-A746-DE8DB63617E6")
 _IID_IAUDIO_ENDPOINT_VOLUME = _guid("5CDF2C82-841E-4546-9722-0CF74078229A")
 
 
-def _call(obj: ctypes.c_void_p, index: int, *args, argtypes=(), restype=ctypes.HRESULT):
+def _call(obj: ctypes.c_void_p, index: int, *args, argtypes=(), restype=None):
     """Call method number ``index`` of a COM object. A failed HRESULT raises OSError."""
+    # HRESULT and WINFUNCTYPE exist only on Windows, so they are looked up here, never at import:
+    # this module is imported on every platform.
+    if restype is None:
+        restype = ctypes.HRESULT
     vtable = ctypes.cast(obj, ctypes.POINTER(ctypes.POINTER(ctypes.c_void_p)))[0]
     prototype = ctypes.WINFUNCTYPE(restype, ctypes.c_void_p, *argtypes)
     return prototype(vtable[index])(obj, *args)

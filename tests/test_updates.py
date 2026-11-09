@@ -619,6 +619,20 @@ class StartupSoundTests(unittest.TestCase):
         winsound.PlaySound.assert_called_once()
         sound.stop()
 
+    def test_imports_without_windows_only_ctypes(self):
+        """The app imports this module on every platform, so it must load without them."""
+        import ctypes
+        import importlib
+
+        from equilibrium import startup_sound
+
+        windows_only = ("HRESULT", "WINFUNCTYPE", "WinDLL", "OleDLL", "windll", "oledll")
+        with mock.patch.dict(ctypes.__dict__):
+            for name in windows_only:
+                ctypes.__dict__.pop(name, None)
+            importlib.reload(startup_sound)
+        importlib.reload(startup_sound)  # Back to normal for the other tests.
+
     def test_nothing_happens_off_windows(self):
         from equilibrium import personal, startup_sound
 
