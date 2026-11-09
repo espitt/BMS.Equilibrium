@@ -437,6 +437,108 @@ class PromptTests(ServerTest):
         warning.assert_called_once()
         quit_app.assert_not_called()
 
+    def test_deferred_check_signals_then_hands_over_the_prompt(self):
+        update_ui, controller = self.controller()
+        events, deferred = [], []
+        controller.check_finished.connect(lambda: events.append("finished"))
+
+        def defer(prompt):
+            events.append("deferred")
+            deferred.append(prompt)
+
+        with mock.patch.object(updater, "find_update", return_value=self.update()), mock.patch.object(
+            updater, "remove_old_downloads"
+        ), mock.patch.object(update_ui.QMessageBox, "exec") as shown:
+            controller.check(defer=defer)
+            self.pump(lambda: deferred)
+            self.assertEqual(events, ["finished", "deferred"])
+            shown.assert_not_called()  # Nothing appears until the caller runs the prompt.
+            deferred[0]()
+            shown.assert_called_once()
+
+
+class SplashTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        try:
+            from PySide6.QtWidgets import QApplication
+        except ImportError as error:
+            raise unittest.SkipTest(f"PySide6 not installed: {error}")
+        cls.app = QApplication.instance() or QApplication([])
+
+    def make(self):
+        from PySide6.QtGui import QIcon
+        from PySide6.QtWidgets import QMainWindow
+
+        from equilibrium import splash
+
+        self.window = QMainWindow()
+        icon = QIcon(str(ROOT / "app" / "equilibrium" / "assets" / "icon.png"))
+        return splash, splash.Splash(icon, self.window)
+
+    def wait(self, ms):
+        deadline = time.time() + ms / 1000
+        while time.time() < deadline:
+            self.app.processEvents()
+            time.sleep(0.005)
+
+    def test_waits_for_ready_and_the_minimum_time(self):
+        splash, startup = self.make()
+        actions = []
+        with mock.patch.object(splash, "MIN_DURATION_MS", 50), mock.patch.object(
+            splash, "MAX_DURATION_MS", 5000
+        ):
+            startup.show()
+            startup.ready()
+            startup.after_reveal(lambda: actions.append("prompt"))
+            self.assertFalse(self.window.isVisible())  # Ready, but the minimum has not passed.
+            self.wait(150)
+        self.assertTrue(self.window.isVisible())
+        self.assertFalse(startup.screen.isVisible())
+        self.assertEqual(actions, ["prompt"])
+
+    def test_stays_until_ready(self):
+        splash, startup = self.make()
+        with mock.patch.object(splash, "MIN_DURATION_MS", 20), mock.patch.object(
+            splash, "MAX_DURATION_MS", 5000
+        ):
+            startup.show()
+            self.wait(100)
+            self.assertFalse(self.window.isVisible())
+            startup.ready()
+        self.assertTrue(self.window.isVisible())
+
+    def test_custom_image_for_known_windows_users_only(self):
+        from equilibrium import splash
+
+        adam = splash.user_image(Path(r"C:\Users\Adam"), "win32")
+        self.assertIsNotNone(adam)
+        self.assertTrue(adam.is_file())
+        self.assertEqual(splash.user_image(Path(r"C:\Users\adam"), "win32"), adam)
+        self.assertIsNone(splash.user_image(Path(r"C:\Users\Someone"), "win32"))
+        self.assertIsNone(splash.user_image(Path("/Users/Adam"), "darwin"))
+
+    def test_custom_image_is_shown(self):
+        splash, startup = self.make()
+        icon_size = startup.screen.pixmap().deviceIndependentSize()
+        with mock.patch.object(splash, "user_image", return_value=splash.USER_IMAGES_DIR / "adam.jpg"):
+            _, startup = self.make()
+        size = startup.screen.pixmap().deviceIndependentSize()
+        self.assertEqual(round(size.height()), splash.PHOTO_HEIGHT)
+        self.assertNotEqual(size, icon_size)
+
+    def test_gives_up_waiting_at_the_maximum(self):
+        splash, startup = self.make()
+        with mock.patch.object(splash, "MIN_DURATION_MS", 20), mock.patch.object(
+            splash, "MAX_DURATION_MS", 80
+        ):
+            startup.show()
+            self.wait(200)
+        self.assertTrue(self.window.isVisible())
+        actions = []
+        startup.after_reveal(lambda: actions.append("late prompt"))
+        self.assertEqual(actions, ["late prompt"])
+
 
 class IconTests(unittest.TestCase):
     def test_every_icon_file_exists(self):

@@ -7,7 +7,7 @@ from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import QApplication, QLabel, QMainWindow
 
-from equilibrium import __version__
+from equilibrium import __version__, splash
 
 
 def main() -> int:
@@ -22,7 +22,6 @@ def main() -> int:
     label = QLabel(f"Equilibrium {__version__}")
     label.setAlignment(Qt.AlignmentFlag.AlignCenter)
     window.setCentralWidget(label)
-    window.show()
 
     # Lets CI prove that the frozen build can really start Qt and check for updates.
     if "--smoke-test" in sys.argv:
@@ -34,12 +33,26 @@ def main() -> int:
         core._ssl_context()
         import certifi  # noqa: F401
 
+        window.show()
         QTimer.singleShot(0, app.quit)
-    elif getattr(sys, "frozen", False):
-        # Source runs have no installer to update them, or the installer package on their path.
+        return app.exec()
+
+    startup = splash.Splash(icon, window)
+    startup.show()
+
+    # Source runs have no installer to update them, or the installer package on their path.
+    controller = None
+    if getattr(sys, "frozen", False):
         from equilibrium import update_ui
 
-        update_ui.install(window)
+        controller = update_ui.install(window)
+
+    if controller is None:
+        startup.ready()
+    else:
+        # The splash stays up for the startup check. Any update prompt waits for the window.
+        controller.check_finished.connect(startup.ready)
+        controller.check(defer=startup.after_reveal)
 
     return app.exec()
 

@@ -3,18 +3,19 @@
 from __future__ import annotations
 
 import threading
+from collections.abc import Callable
 from pathlib import Path
 
-from PySide6.QtCore import QObject, Qt, QTimer, Signal
+from PySide6.QtCore import QObject, Qt, Signal
 from PySide6.QtWidgets import QApplication, QMainWindow, QMessageBox, QProgressDialog
 
 from equilibrium import __version__, updater
 from equilibrium_setup import core
 
-STARTUP_DELAY_MS = 3000
-
-
 class UpdateController(QObject):
+    # Emitted when any check finishes, before any prompt is shown.
+    check_finished = Signal()
+
     # Worker threads report back through signals, which Qt delivers on the GUI thread.
     _checked = Signal(object, bool)
     _check_failed = Signal(str, bool)
@@ -30,6 +31,7 @@ class UpdateController(QObject):
         self.busy = False
         self.cancel = threading.Event()
         self.dialog: QProgressDialog | None = None
+        self.defer: Callable[[Callable[[], None]], None] | None = None
 
         self._checked.connect(self._on_checked)
         self._check_failed.connect(self._on_check_failed)
@@ -38,11 +40,17 @@ class UpdateController(QObject):
         self._download_failed.connect(self._on_download_failed)
         self._download_cancelled.connect(self._close_dialog)
 
-    def check(self, manual: bool = False) -> None:
-        """Look for a new version. Only a manual check reports "up to date" or failure."""
+    def check(
+        self, manual: bool = False, defer: Callable[[Callable[[], None]], None] | None = None
+    ) -> None:
+        """Look for a new version. Only a manual check reports "up to date" or failure.
+
+        defer, if given, is handed the prompt to show and decides when to show it.
+        """
         if self.busy:
             return
         self.busy = True
+        self.defer = defer
         threading.Thread(target=self._check_worker, args=(manual,), daemon=True).start()
 
     def _check_worker(self, manual: bool) -> None:
@@ -52,13 +60,26 @@ class UpdateController(QObject):
         except Exception as error:  # A failed check must never disturb the app.
             self._check_failed.emit(str(error), manual)
 
+    def _finish_check(self, prompt: Callable[[], None]) -> None:
+        defer, self.defer = self.defer, None
+        self.check_finished.emit()
+        if defer is None:
+            prompt()
+        else:
+            defer(prompt)
+
     def _on_check_failed(self, message: str, manual: bool) -> None:
         self.busy = False
         if manual:
-            QMessageBox.warning(self.window, "Check for Updates", message)
+            self._finish_check(lambda: QMessageBox.warning(self.window, "Check for Updates", message))
+        else:
+            self._finish_check(lambda: None)
 
     def _on_checked(self, update: updater.Update | None, manual: bool) -> None:
         self.busy = False
+        self._finish_check(lambda: self._report(update, manual))
+
+    def _report(self, update: updater.Update | None, manual: bool) -> None:
         if update is None:
             if manual:
                 QMessageBox.information(
@@ -140,12 +161,14 @@ class UpdateController(QObject):
 
 
 def install(window: QMainWindow) -> UpdateController | None:
-    """Add update checks to the window, if this copy is an installed one."""
+    """Add the update menu item to the window, if this copy is an installed one.
+
+    The caller runs the startup check, so it can keep the splash screen up until it is done.
+    """
     target = updater.install_root()
     if target is None:
         return None
     controller = UpdateController(window, target)
     help_menu = window.menuBar().addMenu("&Help")
     help_menu.addAction("Check for &Updates...", lambda: controller.check(manual=True))
-    QTimer.singleShot(STARTUP_DELAY_MS, controller.check)
     return controller
