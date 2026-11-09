@@ -64,8 +64,8 @@ def _ssl_context() -> ssl.SSLContext:
     return ssl.create_default_context(cafile=certifi.where())
 
 
-def _open(url: str):
-    request = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
+def _open(url: str, headers: Optional[dict] = None):
+    request = urllib.request.Request(url, headers={"User-Agent": USER_AGENT, **(headers or {})})
     # Plain http:// is only reachable from the tests, via a loopback server.
     context = _ssl_context() if url.startswith("https://") else None
     return urllib.request.urlopen(request, timeout=TIMEOUT_SECONDS, context=context)

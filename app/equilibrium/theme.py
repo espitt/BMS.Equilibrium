@@ -271,7 +271,7 @@ QLineEdit:focus, QSpinBox:focus, QDoubleSpinBox:focus, QComboBox:focus {{ border
 QComboBox QAbstractItemView {{ background: {SURFACE_2}; border: 1px solid {BORDER}; selection-background-color: {ACCENT_TINT}; selection-color: {ACCENT}; }}
 QCheckBox {{ spacing: 8px; }}
 
-QTableWidget, QListWidget, QPlainTextEdit {{
+QTableWidget, QListWidget, QPlainTextEdit, QTextEdit {{
     background: {SURFACE}; border: 1px solid {BORDER}; border-radius: 6px; gridline-color: {BORDER};
 }}
 QTableWidget::item, QListWidget::item {{ padding: 4px; }}

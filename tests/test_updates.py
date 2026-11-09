@@ -275,7 +275,7 @@ class WizardUpdateTests(ServerTest):
             for job in window.tk.splitlist(window.tk.call("after", "info")):
                 script = window.tk.splitlist(window.tk.call("after", "info", job))[0]
                 window.tk.call("after", "cancel", job)
-                command = script[0] if isinstance(script, tuple) else str(script)
+                command = str(script[0]) if isinstance(script, tuple) else str(script)
                 window.deletecommand(command)
         except tkinter.TclError:
             pass

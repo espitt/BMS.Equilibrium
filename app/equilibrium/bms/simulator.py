@@ -2,13 +2,17 @@
 
 It behaves like a link to a real BMS: it pushes channel values into the data store, raises and
 resolves faults, prints console lines and answers text commands. The real serial link will
-offer the same interface (send(), received, start(), stop()).
+offer the same interface (send(), received, start(), stop(), and flash() once there is a bootloader
+protocol).
 """
 
 from __future__ import annotations
 
 import math
 import random
+import time
+from collections.abc import Callable
+from pathlib import Path
 
 import numpy as np
 from PySide6.QtCore import QObject, QTimer, Signal
@@ -18,6 +22,7 @@ from equilibrium.bms.layout import AMS_STATES, CHARGER_STATES, PRECHARGE_STATES,
 from equilibrium.bms.store import BmsData
 
 TICK_S = 0.2
+FLASH_SECONDS = 4.0  # How long pretend programming takes
 SOC_POINTS = [0.0, 0.05, 0.1, 0.2, 0.4, 0.6, 0.8, 0.9, 1.0]
 OCV_POINTS = [3.00, 3.30, 3.45, 3.55, 3.68, 3.85, 4.00, 4.08, 4.18]
 CHARGE_SPEEDUP = 25  # Charging is sped up so a demo reaches the target in minutes, not hours.
@@ -79,6 +84,8 @@ class Simulator(QObject):
         self.injected_until = 0.0
         self.pec = {board: 0 for board in layout.boards()}
         self._last_stream = 0.0
+        self.firmware = "v0.4.2 (simulated)"
+        self._flash: tuple[QTimer, Callable[[str], None]] | None = None  # Programming in progress
 
         self.timer = QTimer(self)
         self.timer.setInterval(int(TICK_S * 1000))
@@ -89,7 +96,7 @@ class Simulator(QObject):
     def start(self) -> None:
         self.data.device.update(
             {
-                "Firmware": "v0.4.2 (simulated)",
+                "Firmware": self.firmware,
                 "Bootloader": "v1.1.0",
                 "Hardware": "Master board rev C",
                 "Serial number": "EQ-SIM-0001",
@@ -103,14 +110,64 @@ class Simulator(QObject):
         self.data.resolve_fault(0x0301, "")
         old.latched = False
         self.timer.start()
-        self.received.emit("Equilibrium BMS v0.4.2 (simulated). Type 'help' for commands.")
+        self.received.emit(f"Equilibrium BMS {self.firmware}. Type 'help' for commands.")
 
     def stop(self) -> None:
         self.timer.stop()
+        if self._flash is not None:
+            timer, on_done = self._flash
+            timer.stop()
+            self._flash = None
+            on_done("The connection to the BMS closed while programming.")
+
+    def flash(self, files: list[Path], version: str, on_progress: Callable[[float], None],
+              on_done: Callable[[str], None]) -> None:
+        """Pretend to program firmware: drop into the bootloader, take the files, restart.
+
+        Returns at once. Reports progress from 0 to 1, then calls on_done with "" for success or a
+        message saying what went wrong. A real BMS reports its new version itself; the simulator is
+        told it.
+        """
+        if self._flash is not None:
+            on_done("The BMS is already being programmed.")
+            return
+        missing = [f.name for f in files if not f.is_file()]
+        if missing:
+            on_done(f"Missing firmware file: {', '.join(missing)}")
+            return
+        self.timer.stop()  # A BMS in its bootloader sends no data.
+        self.received.emit("BOOT entering bootloader")
+        started = time.monotonic()
+        timer = QTimer(self)
+        timer.setInterval(100)
+
+        def step() -> None:
+            fraction = (time.monotonic() - started) / FLASH_SECONDS
+            if fraction < 1:
+                on_progress(fraction)
+                return
+            timer.stop()
+            timer.deleteLater()
+            self._flash = None
+            self.firmware = f"v{version} (simulated)"
+            self.data.device["Firmware"] = self.firmware
+            self.state = "Init"
+            self.received.emit("BOOT image verified, restarting")
+            self.received.emit(f"Equilibrium BMS {self.firmware}. Type 'help' for commands.")
+            self.timer.start()
+            on_progress(1.0)
+            on_done("")
+
+        timer.timeout.connect(step)
+        self._flash = (timer, on_done)
+        timer.start()
 
     def send(self, text: str) -> None:
         words = text.strip().split()
         if not words:
+            return
+        if self._flash is not None:
+            self.received.emit("ERR in bootloader: wait for programming to finish")
             return
         cmd, args = words[0].lower(), [w.lower() for w in words[1:]]
         reply = self.received.emit

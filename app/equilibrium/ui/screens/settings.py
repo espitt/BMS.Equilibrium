@@ -5,10 +5,11 @@ from __future__ import annotations
 from pathlib import Path
 
 from PySide6.QtCore import QStandardPaths, Qt
-from PySide6.QtWidgets import QFileDialog, QGridLayout, QHBoxLayout, QListWidget, QMessageBox, QScrollArea, QWidget
+from PySide6.QtWidgets import QFileDialog, QGridLayout, QHBoxLayout, QMessageBox, QScrollArea, QWidget
 
 from equilibrium import __version__, theme
 from equilibrium.ui.context import AppContext
+from equilibrium.ui.firmware_browser import ReleaseBrowser
 from equilibrium.ui.screens.base import Screen
 from equilibrium.ui.widgets import Card, SettingsForm, button, label, screen_layout, write_button
 
@@ -63,18 +64,8 @@ class SettingsScreen(Screen):
         firmware.box.addWidget(self.device)
         firmware.box.addWidget(label("Firmware is the program on the BMS. It is separate from the configuration.",
                                      "faint", wrap=True))
-        self.releases = QListWidget()
-        self.releases.setMaximumHeight(130)
-        firmware.box.addWidget(self.releases)
-        row = QHBoxLayout()
-        row.addWidget(button("Check GitHub for releases", self._check_releases))
-        self.program = button("Program selected…", self._program, "primary")
-        self.program.setEnabled(False)
-        row.addWidget(self.program)
-        row.addStretch(1)
-        firmware.box.addLayout(row)
-        self.releases.itemSelectionChanged.connect(
-            lambda: self.program.setEnabled(bool(self.releases.selectedItems()) and ctx.connected))
+        self.browser = ReleaseBrowser(ctx)
+        firmware.box.addWidget(self.browser)
         grid.addWidget(firmware, 2, 0, 1, 2)
         box.addStretch(1)
 
@@ -166,25 +157,11 @@ class SettingsScreen(Screen):
 
     def _link_changed(self) -> None:
         self.read.setEnabled(self.ctx.connected)
-        self.program.setEnabled(bool(self.releases.selectedItems()) and self.ctx.connected)
 
     def _read_from_bms(self) -> None:
         QMessageBox.information(self, "Not available yet",
                                 "Reading the configuration from the BMS needs the serial protocol, "
                                 "which is not defined yet.")
-
-    def _check_releases(self) -> None:
-        self.releases.clear()
-        self.releases.addItem("Firmware releases will be listed here once the firmware repository is set.")
-        self.releases.item(0).setForeground(theme.color(theme.TEXT_FAINT))
-        self.releases.item(0).setFlags(Qt.ItemFlag.NoItemFlags)
-
-    def _program(self) -> None:
-        QMessageBox.information(
-            self, "Not available yet",
-            "Programming will check that the BMS is safe to program (TS off, no faults), reboot it into its "
-            "bootloader, send and verify the firmware, then offer to re-apply your saved configuration.\n\n"
-            "It needs the bootloader protocol, which is not defined yet.")
 
     def refresh(self) -> None:
         data = self.ctx.data
@@ -193,3 +170,4 @@ class SettingsScreen(Screen):
                                             for k, v in data.device.items()))
         else:
             self.device.setText("Connect to a BMS to see its firmware version.")
+        self.browser.device_changed()

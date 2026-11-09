@@ -25,6 +25,8 @@ cancelled, the previous version reopens.
 - `app/equilibrium/`: the application (`updater.py` and `update_ui.py` handle updates;
   `personal.py` lists per-user splash images, kept in `assets/splash/`)
   - `bms/`: the pack layout, live data store, provisional configuration schema and a simulated BMS
+  - `firmware.py`: lists the BMS firmware releases on GitHub (browsed in `ui/firmware_browser.py`,
+    on the Settings screen; see `docs/firmware-release-browser.md`)
   - `ui/`: the main window, start screen and one module per screen in `ui/screens/`
   - `theme.py`: every colour. Colour means pack state; everything else is neutral dark grey
   - `assets/pack_layout.json`: segments, cells and each thermistor's XYZ position (placeholder values)

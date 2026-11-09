@@ -120,18 +120,20 @@ def colored(text: str, hex_code: str) -> str:
 class Badge(QLabel):
     """A pill showing a named state in its state colour."""
 
-    def __init__(self, text: str = "—") -> None:
+    def __init__(self, text: str = "—", compact: bool = False) -> None:
         super().__init__(text)
+        self.compact = compact  # Smaller, for tags inside a list row
         self.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.set_state(text, theme.TEXT_FAINT)
 
     def set_state(self, text: str, hex_code: str) -> None:
         self.setText(text)
         c = theme.color(hex_code)
+        size = "border-radius: 9px; padding: 1px 8px; font-size: 11px;" if self.compact else \
+            "border-radius: 11px; padding: 3px 12px;"
         self.setStyleSheet(
             f"QLabel {{ color: {hex_code}; background: rgba({c.red()},{c.green()},{c.blue()},38);"
-            f" border: 1px solid rgba({c.red()},{c.green()},{c.blue()},110); border-radius: 11px;"
-            f" padding: 3px 12px; font-weight: 600; }}"
+            f" border: 1px solid rgba({c.red()},{c.green()},{c.blue()},110); {size} font-weight: 600; }}"
         )
 
 
