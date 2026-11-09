@@ -248,6 +248,7 @@ class WizardUpdateTests(ServerTest):
         window.withdraw()
         closed = []
         real_destroy = window.destroy
+        self.addCleanup(self.free_wizard, [window])
         window.destroy = lambda: (closed.append(True), real_destroy())
         act(window)
         deadline = time.time() + 30
@@ -256,6 +257,36 @@ class WizardUpdateTests(ServerTest):
             time.sleep(0.01)
             self.assertLess(time.time(), deadline, "wizard timed out")
         return window, closed
+
+    def free_wizard(self, holder):
+        """Destroy the wizard and free its Tk objects now, on the main thread.
+
+        Left to the garbage collector, they can be freed later on a worker thread (such as the
+        test HTTP server's), and Tcl aborts the whole process when that happens (seen on macOS).
+        """
+        import gc
+        import tkinter
+
+        window = holder.pop()
+        # Pending after() callbacks are held by Tcl itself, out of the garbage collector's
+        # reach, and keep the wizard alive; they also print "invalid command name ..._poll".
+        # (Done by hand: after_cancel() fails on some Tcl versions, where the script is a list.)
+        try:
+            for job in window.tk.splitlist(window.tk.call("after", "info")):
+                script = window.tk.splitlist(window.tk.call("after", "info", job))[0]
+                window.tk.call("after", "cancel", job)
+                command = script[0] if isinstance(script, tuple) else str(script)
+                window.deletecommand(command)
+        except tkinter.TclError:
+            pass
+        try:
+            type(window).destroy(window)  # The class's own, not run_wizard's recording wrapper.
+        except tkinter.TclError:
+            pass  # The wizard already closed itself.
+        del window
+        gc.collect()
+        leaked = [obj for obj in gc.get_objects() if isinstance(obj, (tkinter.Variable, tkinter.Tk))]
+        self.assertEqual(leaked, [], "wizard Tk objects outlived the test")
 
     def installed(self, version="0.1.0"):
         target = self.root / "programs" / "Equilibrium"
