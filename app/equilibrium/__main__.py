@@ -7,7 +7,7 @@ from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import QApplication, QLabel, QMainWindow
 
-from equilibrium import __version__, personal, splash, startup_sound
+from equilibrium import __version__, splash
 
 
 def main() -> int:
@@ -39,10 +39,6 @@ def main() -> int:
 
     startup = splash.Splash(icon, window)
     startup.show()
-
-    sound_file = personal.asset("sound")
-    if sound_file is not None:
-        startup_sound.StartupSound(sound_file, app).play()
 
     # Source runs have no installer to update them, or the installer package on their path.
     controller = None

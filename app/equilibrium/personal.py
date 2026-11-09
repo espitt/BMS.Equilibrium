@@ -5,15 +5,14 @@ from pathlib import Path, PurePath
 
 ASSETS_DIR = Path(__file__).parent / "assets" / "splash"
 
-# Account folder name, lower case -> files in ASSETS_DIR. Either entry can be left out.
-# "image" replaces the splash icon; "sound" is a WAV file played at full volume on startup.
+# Account folder name, lower case -> files in ASSETS_DIR. "image" replaces the splash icon.
 USERS = {
-    "adam": {"image": "adam.jpg", "sound": "adam.wav"},
+    "adam": {"image": "adam.jpg"},
 }
 
 
 def asset(kind: str, home: PurePath | None = None, platform: str = sys.platform) -> Path | None:
-    """The signed-in Windows user's file of this kind ("image" or "sound"), if they have one."""
+    """The signed-in Windows user's file of this kind (such as "image"), if they have one."""
     if platform != "win32":
         return None
     name = (home or Path.home()).name.lower()
