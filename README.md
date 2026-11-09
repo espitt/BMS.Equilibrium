@@ -24,10 +24,14 @@ cancelled, the previous version reopens.
 
 - `app/equilibrium/`: the application (`updater.py` and `update_ui.py` handle updates;
   `personal.py` lists per-user splash images, kept in `assets/splash/`)
+  - `bms/`: the pack layout, live data store, provisional configuration schema and a simulated BMS
+  - `ui/`: the main window, start screen and one module per screen in `ui/screens/`
+  - `theme.py`: every colour. Colour means pack state; everything else is neutral dark grey
+  - `assets/pack_layout.json`: segments, cells and each thermistor's XYZ position (placeholder values)
 - `installer/equilibrium_setup/`: the setup wizard (standard library and `certifi` only, to stay small)
 - `packaging/build.py`: builds release files with PyInstaller
 - `.github/workflows/release.yml`: builds every platform and publishes the release
-- `tests/`: installer logic tests
+- `tests/`: installer, update, BMS data and screen tests
 
 The install folder belongs to the installer and is replaced on update and deleted on uninstall.
 **The app must keep user data and settings elsewhere**, for example in Qt's `QStandardPaths.AppDataLocation`.
@@ -43,6 +47,8 @@ source .venv/bin/activate       (macOS, Linux)
 pip install -r requirements-build.txt
 
 python -m unittest discover -s tests -v
+
+cd app && python -m equilibrium     (run from source; pick "Simulated BMS" to try it without hardware)
 ```
 
 ## Publishing a release

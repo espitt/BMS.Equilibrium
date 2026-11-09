@@ -1,0 +1,33 @@
+{
+  "_comment": "Placeholder layout. Replace with the real accumulator geometry. Thermistor ids and XYZ positions (mm) are per segment; every segment uses the same map.",
+  "segments": 7,
+  "cells_per_segment": 20,
+  "slaves_per_segment": 2,
+  "segment_size_mm": [400, 180, 90],
+  "thermistors": [
+    {"id": 1, "slave": 1, "x": 50, "y": 40, "z": 20},
+    {"id": 2, "slave": 1, "x": 150, "y": 40, "z": 20},
+    {"id": 3, "slave": 2, "x": 250, "y": 40, "z": 20},
+    {"id": 4, "slave": 2, "x": 350, "y": 40, "z": 20},
+    {"id": 5, "slave": 1, "x": 50, "y": 90, "z": 20},
+    {"id": 6, "slave": 1, "x": 150, "y": 90, "z": 20},
+    {"id": 7, "slave": 2, "x": 250, "y": 90, "z": 20},
+    {"id": 8, "slave": 2, "x": 350, "y": 90, "z": 20},
+    {"id": 9, "slave": 1, "x": 50, "y": 140, "z": 20},
+    {"id": 10, "slave": 1, "x": 150, "y": 140, "z": 20},
+    {"id": 11, "slave": 2, "x": 250, "y": 140, "z": 20},
+    {"id": 12, "slave": 2, "x": 350, "y": 140, "z": 20},
+    {"id": 13, "slave": 1, "x": 50, "y": 40, "z": 70},
+    {"id": 14, "slave": 1, "x": 150, "y": 40, "z": 70},
+    {"id": 15, "slave": 2, "x": 250, "y": 40, "z": 70},
+    {"id": 16, "slave": 2, "x": 350, "y": 40, "z": 70},
+    {"id": 17, "slave": 1, "x": 50, "y": 90, "z": 70},
+    {"id": 18, "slave": 1, "x": 150, "y": 90, "z": 70},
+    {"id": 19, "slave": 2, "x": 250, "y": 90, "z": 70},
+    {"id": 20, "slave": 2, "x": 350, "y": 90, "z": 70},
+    {"id": 21, "slave": 1, "x": 50, "y": 140, "z": 70},
+    {"id": 22, "slave": 1, "x": 150, "y": 140, "z": 70},
+    {"id": 23, "slave": 2, "x": 250, "y": 140, "z": 70},
+    {"id": 24, "slave": 2, "x": 350, "y": 140, "z": 70}
+  ]
+}

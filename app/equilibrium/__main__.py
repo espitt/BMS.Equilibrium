@@ -1,13 +1,14 @@
-"""Placeholder window, so the installer has a real application to deliver."""
+"""Starts the app: splash screen, update check, then the main window."""
 
 import sys
 from pathlib import Path
 
-from PySide6.QtCore import Qt, QTimer
+from PySide6.QtCore import QTimer
 from PySide6.QtGui import QIcon
-from PySide6.QtWidgets import QApplication, QLabel, QMainWindow
+from PySide6.QtWidgets import QApplication
 
-from equilibrium import __version__, splash
+from equilibrium import splash, theme
+from equilibrium.ui.main_window import MainWindow
 
 
 def main() -> int:
@@ -15,18 +16,16 @@ def main() -> int:
     app.setApplicationName("Equilibrium")
     icon = QIcon(str(Path(__file__).parent / "assets" / "icon.png"))
     app.setWindowIcon(icon)
+    theme.apply(app)
 
-    window = QMainWindow()
-    window.setWindowTitle("Equilibrium")
-    window.resize(900, 600)
-    label = QLabel(f"Equilibrium {__version__}")
-    label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-    window.setCentralWidget(label)
+    window = MainWindow()
 
     # Lets CI prove that the frozen build can really start Qt and check for updates.
     if "--smoke-test" in sys.argv:
         if icon.isNull():
             return 1
+        import pyqtgraph  # noqa: F401
+
         from equilibrium import update_ui  # noqa: F401
         from equilibrium_setup import core
 
