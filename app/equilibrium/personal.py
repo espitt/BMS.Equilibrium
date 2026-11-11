@@ -8,6 +8,7 @@ ASSETS_DIR = Path(__file__).parent / "assets" / "splash"
 # Account folder name, lower case -> files in ASSETS_DIR. "image" replaces the splash icon.
 USERS = {
     "adam": {"image": "adam.jpg"},
+    "alfie": {"image": "alfie.jpg"},
 }
 
 

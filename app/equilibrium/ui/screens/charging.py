@@ -107,12 +107,12 @@ class CompactStats(Card):
     It has the same parts under the same names as the full layout, so the screen fills in both alike.
     """
 
-    soc_px = 26
+    soc_px = 24
 
     def __init__(self, ctx: AppContext) -> None:
         super().__init__("Charging")
         self.setFixedWidth(COMPACT_WIDTH)
-        self.box.setSpacing(5)
+        self.box.setSpacing(3)  # Tight, so the whole column fits the smallest window on every platform
         self.state_badge = Badge(compact=True)
         state_row = QHBoxLayout()
         state_row.addWidget(self.state_badge)
