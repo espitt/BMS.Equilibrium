@@ -54,9 +54,16 @@ class GameTest(unittest.TestCase):
     def setUp(self):
         # Scores and the last game played are saved, so point the settings at a file of the test's own.
         ini = str(Path(tempfile.mkdtemp()) / "settings.ini")
-        patch = mock.patch.object(arcade, "_settings", lambda: QSettings(ini, QSettings.Format.IniFormat))
-        patch.start()
-        self.addCleanup(patch.stop)
+        from equilibrium import leaderboard
+
+        for patch in (
+            mock.patch.object(arcade, "_settings", lambda: QSettings(ini, QSettings.Format.IniFormat)),
+            # The shared leaderboard is tested in test_leaderboard.py. Here it stays off the internet.
+            mock.patch.object(leaderboard, "fetch", return_value={}),
+            mock.patch.object(leaderboard, "can_post", return_value=False),
+        ):
+            patch.start()
+            self.addCleanup(patch.stop)
 
 
 class PlayingTests(GameTest):
@@ -209,7 +216,8 @@ class HoldTests(GameTest):
         self.assertTrue(screen.compact.isVisible(), "the condensed stats take the place of the full layout")
         self.assertTrue(screen.full.isHidden())
         self.assertFalse(window.side.isVisible(), "the options panel makes room for the game")
-        self.assertGreaterEqual(screen.arcade.game.width(), 400)
+        self.assertGreaterEqual(screen.arcade.game.width(), 300)
+        self.assertTrue(screen.arcade.board.isVisible(), "the shared leaderboard sits beside the game")
         self.assertLessEqual(screen.compact.sizeHint().height(), screen.compact.height(), "nothing is squeezed")
         for view in screen.views:  # Both layouts show the same numbers
             self.assertEqual(view.soc.text(), f"{data.value('pack.soc'):.1f} %")

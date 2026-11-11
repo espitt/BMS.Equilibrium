@@ -30,6 +30,8 @@ cancelled, the previous version reopens.
   - `ui/`: the main window, start screen and one module per screen in `ui/screens/`
   - `ui/games/`: ten minigames for the Charging screen (the "Games" button). They sit beside a condensed column of the
     charging stats, never over them, and stop while there is a fault, stale data or no BMS
+  - `leaderboard.py`: the minigame leaderboard shared by everyone with the app, kept in a GitHub
+    repository (shown by `ui/games/board.py`; setup in `docs/leaderboard.md`)
   - `theme.py`: every colour. Colour means pack state; everything else is neutral dark grey
   - `assets/pack_layout.json`: segments, cells and each thermistor's XYZ position (placeholder values)
 - `installer/equilibrium_setup/`: the setup wizard (standard library and `certifi` only, to stay small)

@@ -28,6 +28,8 @@ WORK = ROOT / "build"
 DIST = ROOT / "dist"
 APP_INIT = ROOT / "app" / "equilibrium" / "__init__.py"
 SETUP_INIT = ROOT / "installer" / "equilibrium_setup" / "__init__.py"
+LEADERBOARD = ROOT / "app" / "equilibrium" / "leaderboard.py"
+LEADERBOARD_SECRET = "LEADERBOARD_TOKEN"  # Environment variable holding the token that lets the app post scores
 SETUP_NAME = "EquilibriumSetup"
 
 sys.path.insert(0, str(ROOT / "installer"))
@@ -61,12 +63,19 @@ def stamp(path: Path, pattern: str, replacement: str) -> None:
 
 def build(version: str, repo: str) -> None:
     key = platform_key()
-    originals = {path: path.read_text(encoding="utf-8") for path in (APP_INIT, SETUP_INIT)}
+    originals = {path: path.read_text(encoding="utf-8") for path in (APP_INIT, SETUP_INIT, LEADERBOARD)}
+    token = os.environ.get(LEADERBOARD_SECRET, "").strip()
+    if not re.fullmatch(r"[A-Za-z0-9_]*", token):
+        raise SystemExit(f"{LEADERBOARD_SECRET} does not look like a GitHub token")
+    if not token:
+        print(f"{LEADERBOARD_SECRET} is not set: this build will show the leaderboard but not add scores to it.")
     shutil.rmtree(RELEASE, ignore_errors=True)
     RELEASE.mkdir()
     try:
         stamp(APP_INIT, r"^__version__ = .*$", f'__version__ = "{version}"')
         stamp(SETUP_INIT, r"^GITHUB_REPO = .*$", f'GITHUB_REPO = "{repo}"')
+        # Only ever in the built app, never in the repository: GitHub revokes a token it finds committed.
+        stamp(LEADERBOARD, r"^TOKEN = .*$", f'TOKEN = "{token}"')
         # The app reuses the installer's download and checksum code for updates.
         pyinstaller(
             "Equilibrium", "entry_app.py", "app", "--onedir",

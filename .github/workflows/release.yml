@@ -33,6 +33,9 @@ jobs:
 
       - name: Build
         shell: bash
+        env:
+          # Lets the app add scores to the minigame leaderboard. See docs/leaderboard.md.
+          LEADERBOARD_TOKEN: ${{ secrets.LEADERBOARD_TOKEN }}
         run: python packaging/build.py build --version "${GITHUB_REF_NAME#v}" --repo "$GITHUB_REPOSITORY"
 
       - uses: actions/upload-artifact@v4
