@@ -57,7 +57,9 @@ class Arcade(Card):
         last = _number(_settings().value("games/last"))
         self.picker.setCurrentIndex(last if 0 <= last < len(GAMES) else 0)
         self.picker.currentIndexChanged.connect(self._picked)
-        self.level.currentIndexChanged.connect(lambda _index: self._load(keep_level=True))
+        # A method, not a lambda holding self: that would keep the card alive until Python shuts down,
+        # after Qt has gone, which crashes on exit.
+        self.level.currentIndexChanged.connect(self._level_picked)
         self._load()
         self.box.addWidget(self.hint)
 
@@ -66,6 +68,9 @@ class Arcade(Card):
     def _picked(self, index: int) -> None:
         _settings().setValue("games/last", index)  # Opens on the same game next time
         self._load()
+
+    def _level_picked(self, _index: int) -> None:
+        self._load(keep_level=True)
 
     def _load(self, keep_level: bool = False) -> None:
         cls = GAMES[self.picker.currentIndex()]

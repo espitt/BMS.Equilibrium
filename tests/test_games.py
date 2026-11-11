@@ -175,7 +175,8 @@ class HoldTests(GameTest):
         self.assertEqual(card.score.text(), "Score 0 · Best 40")
         card.game.add_score(10)
         self.assertEqual(card.score.text(), "Score 10 · Best 40")
-        self.assertEqual(Arcade().picker.currentIndex(), GAMES.index(Mines), "opens on the game played last")
+        reopened = Arcade()  # Kept in a variable: Qt deletes its picker along with an unreferenced card.
+        self.assertEqual(reopened.picker.currentIndex(), GAMES.index(Mines), "opens on the game played last")
 
     def test_the_charging_screen_stops_games_when_the_pack_needs_attention(self):
         from equilibrium import theme
