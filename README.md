@@ -28,6 +28,8 @@ cancelled, the previous version reopens.
   - `firmware.py`: lists the BMS firmware releases on GitHub (browsed in `ui/firmware_browser.py`,
     on the Settings screen; see `docs/firmware-release-browser.md`)
   - `ui/`: the main window, start screen and one module per screen in `ui/screens/`
+  - `ui/games/`: ten minigames for the Charging screen (the "Games" button). They sit beside a condensed column of the
+    charging stats, never over them, and stop while there is a fault, stale data or no BMS
   - `theme.py`: every colour. Colour means pack state; everything else is neutral dark grey
   - `assets/pack_layout.json`: segments, cells and each thermistor's XYZ position (placeholder values)
 - `installer/equilibrium_setup/`: the setup wizard (standard library and `certifi` only, to stay small)

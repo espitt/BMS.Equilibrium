@@ -7,11 +7,11 @@ from pathlib import Path
 from PySide6.QtCore import QStandardPaths, Qt
 from PySide6.QtWidgets import QFileDialog, QGridLayout, QHBoxLayout, QMessageBox, QScrollArea, QWidget
 
-from equilibrium import __version__, theme
+from equilibrium import __version__
 from equilibrium.ui.context import AppContext
 from equilibrium.ui.firmware_browser import ReleaseBrowser
 from equilibrium.ui.screens.base import Screen
-from equilibrium.ui.widgets import Card, SettingsForm, button, label, screen_layout, write_button
+from equilibrium.ui.widgets import Card, SettingsForm, button, device_html, label, screen_layout, write_button
 
 
 class SettingsScreen(Screen):
@@ -38,24 +38,27 @@ class SettingsScreen(Screen):
         pack.box.addWidget(SettingsForm(ctx.config, ["cell_type", "cell_capacity_ah", "parallel_count"]))
         layout = ctx.layout
         pack.box.addWidget(label(
-            f"{layout.cell_count} cells in series · {layout.segments} segments of {layout.cells_per_segment} · "
-            f"{len(layout.thermistors)} thermistors · {layout.board_count} slave boards", "faint", wrap=True))
-        pack.box.addWidget(label("Series count and thermistor positions come from the pack layout file.", "faint",
-                                 wrap=True))
+            f"{layout.cell_count} cells in series, {layout.segments} segments of {layout.cells_per_segment}, "
+            f"{len(layout.thermistors)} thermistors, {layout.board_count} slave boards. Series count and "
+            "thermistor positions come from the pack layout file.", "faint", wrap=True))
+        pack.box.addStretch(1)
         grid.addWidget(pack, 0, 0)
 
         can = Card("CAN bus and USB")
         can.box.addWidget(SettingsForm(ctx.config, ["can_baud", "can_base_id", "telemetry_hz"]))
+        can.box.addStretch(1)
         grid.addWidget(can, 0, 1)
 
         precharge = Card("Precharge")
         precharge.box.addWidget(SettingsForm(ctx.config, ["precharge_target_pct", "precharge_timeout_ms"]))
+        precharge.box.addStretch(1)
         grid.addWidget(precharge, 1, 0)
 
         about = Card("This app")
         about.box.addWidget(label(f"Equilibrium {__version__}", "muted"))
         about.box.addWidget(label("App updates are separate from BMS firmware: use Help > Check for Updates.",
                                   "faint", wrap=True))
+        about.box.addStretch(1)
         grid.addWidget(about, 1, 1)
 
         firmware = Card("BMS firmware")
@@ -164,10 +167,5 @@ class SettingsScreen(Screen):
                                 "which is not defined yet.")
 
     def refresh(self) -> None:
-        data = self.ctx.data
-        if data.device:
-            self.device.setText("<br>".join(f"{k}: <span style='color:{theme.TEXT}'>{v}</span>"
-                                            for k, v in data.device.items()))
-        else:
-            self.device.setText("Connect to a BMS to see its firmware version.")
+        self.device.setText(device_html(self.ctx.data.device) or "Connect to a BMS to see its firmware version.")
         self.browser.device_changed()

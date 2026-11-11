@@ -45,6 +45,11 @@ def _size(size: int) -> str:
     return f"{size / 1024 / 1024:.1f} MB"
 
 
+def _esc(text: str) -> str:
+    """Text made safe to put in a rich text label."""
+    return html.escape(text, quote=False)
+
+
 def plain_notes(notes: str) -> str:
     """The release description without its Markdown formatting."""
     document = QTextDocument()
@@ -94,7 +99,7 @@ class ReleaseRow(QWidget):
 
     @staticmethod
     def _badge(text: str, hex_code: str) -> Badge:
-        badge = Badge(compact=True)
+        badge = Badge(compact=True, dot=False)
         badge.set_state(text, hex_code)
         return badge
 
@@ -215,7 +220,7 @@ class ReleaseBrowser(QWidget):
 
     def _download_worker(self, release: FirmwareRelease) -> None:
         try:
-            folder = firmware.download(release, lambda done, total: self._progress.emit(done, total))
+            folder = firmware.download(release, self._progress.emit)
             self._downloaded.emit(release.tag, folder)
         except core.InstallError as error:
             self._download_failed.emit(release.tag, str(error))
@@ -275,10 +280,10 @@ class ReleaseBrowser(QWidget):
         self._show_selected()
 
     def _render_status(self) -> None:
-        repo = html.escape(firmware.REPO, quote=False)
+        repo = _esc(firmware.REPO)
         count = len(self.releases)
         if self.error:
-            text = colored(html.escape(self.error, quote=False), theme.WARN)
+            text = colored(_esc(self.error), theme.WARN)
         elif self.checking:
             text = f"Checking {repo} for releases…"
         elif not self.checked:
@@ -293,24 +298,19 @@ class ReleaseBrowser(QWidget):
         """Say what the selected release's files are, or where they were downloaded to."""
         release = self._selected()
         if release is None:
-            self.files.hide()
+            text = ""
         elif release.tag in (self.downloading, self.programming):
             doing = "Downloading" if release.tag == self.downloading else "Programming the BMS with"
-            self.files.setText(f"{doing} {html.escape(release.tag, quote=False)}…")
-            self.files.show()
+            text = f"{doing} {_esc(release.tag)}…"
         elif release.tag in self.downloaded:
             folder = firmware.download_folder(release)
-            link = f"<a href='{QUrl.fromLocalFile(str(folder)).toString()}'>{html.escape(str(folder), quote=False)}</a>"
-            self.files.setText(f"Downloaded to {link}")
-            self.files.show()
+            text = f"Downloaded to <a href='{QUrl.fromLocalFile(str(folder)).toString()}'>{_esc(str(folder))}</a>"
         elif release.files:
-            names = ", ".join(f"{html.escape(f.name, quote=False)} ({_size(f.size)})" for f in release.files)
-            self.files.setText(names)
-            self.files.show()
+            text = ", ".join(f"{_esc(f.name)} ({_size(f.size)})" for f in release.files)
         else:
-            self.files.setText(f"No files are attached to {html.escape(release.tag, quote=False)}, so there is "
-                               "nothing to download.")
-            self.files.show()
+            text = f"No files are attached to {_esc(release.tag)}, so there is nothing to download."
+        self.files.setText(text)
+        self.files.setVisible(release is not None)
         self._update_buttons()
 
     def _update_buttons(self) -> None:

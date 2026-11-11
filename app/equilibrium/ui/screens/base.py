@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from PySide6.QtCore import Signal
 from PySide6.QtGui import QShowEvent
 from PySide6.QtWidgets import QWidget
 
@@ -14,10 +15,13 @@ class Screen(QWidget):
     title = ""
     nav_label = ""
 
+    panelChanged = Signal()  # show_panel changed
+
     def __init__(self, ctx: AppContext) -> None:
         super().__init__()
         self.ctx = ctx
-        self.panel = Panel(self.title)
+        self.show_panel = True  # False hides the left sidebar while this screen is showing
+        self.panel = Panel()
         ctx.data.updated.connect(self._on_data)
         ctx.data.staleChanged.connect(self._on_data)
         theme.signals.changed.connect(self.restyle)

@@ -20,7 +20,7 @@ from PySide6.QtWidgets import (
 from equilibrium import theme
 from equilibrium.ui.context import AppContext
 from equilibrium.ui.screens.base import Screen
-from equilibrium.ui.widgets import button, label, screen_layout
+from equilibrium.ui.widgets import button, label, pad_spin_box, screen_layout
 
 pg.setConfigOptions(antialias=True, background=theme.BG, foreground=theme.TEXT_MUTED)
 
@@ -97,6 +97,7 @@ class PlotsScreen(Screen):
         self.window.setRange(5, 600)
         self.window.setValue(self.window_s)
         self.window.setSuffix(" s")
+        pad_spin_box(self.window)
         self.window.valueChanged.connect(self._window_changed)
         panel.add(self.window)
         pause = QCheckBox("Pause")
@@ -209,9 +210,9 @@ class PlotsScreen(Screen):
         else:
             info = channels[self.x_channel]
             self.plot.setLabel("bottom", info.name, units=info.unit or None)
-        symbol = None if self.x_channel == TIME else "o"
+        scatter = self.x_channel != TIME  # Dots: samples of one channel against another have no order to join up.
         for cid, curve in self.curves.items():
-            if symbol:
+            if scatter:
                 curve.setPen(None)
                 curve.setSymbol("o")
                 curve.setSymbolSize(4)

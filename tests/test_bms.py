@@ -3,19 +3,20 @@
 import os
 import sys
 import tempfile
-import time
 import unittest
 from pathlib import Path
+from unittest import mock
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path[:0] = [str(ROOT / "installer"), str(ROOT / "app")]
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
+from PySide6.QtCore import QSettings  # noqa: E402
 from PySide6.QtWidgets import QApplication  # noqa: E402
 
 from equilibrium.bms.config import BY_KEY, SETTINGS, Config  # noqa: E402
 from equilibrium.bms.layout import PackLayout, build_channels, cell_id, temp_id  # noqa: E402
-from equilibrium.bms.store import BmsData  # noqa: E402
+from equilibrium.bms.store import BmsData, worst_severity  # noqa: E402
 
 app = QApplication.instance() or QApplication([])
 
@@ -96,6 +97,15 @@ class StoreTests(unittest.TestCase):
         self.assertIs(fault, again)
         self.assertEqual(fault.count, 2)
 
+    def test_worst_severity(self):
+        self.assertIsNone(worst_severity([]))
+        info = self.data.raise_fault(1, "Note", "info")
+        warning = self.data.raise_fault(2, "Careful", "warning")
+        self.assertEqual(worst_severity([info]), "info")
+        self.assertEqual(worst_severity([info, warning]), "warning")
+        critical = self.data.raise_fault(3, "Stop", "critical")
+        self.assertEqual(worst_severity([warning, critical, info]), "critical")
+
 
 class ConfigTests(unittest.TestCase):
     def test_defaults_are_within_limits(self):
@@ -148,6 +158,37 @@ class SimulatorTests(unittest.TestCase):
         sim.send("nonsense")
         self.assertTrue(any("charge start" in line for line in lines))
         self.assertTrue(lines[-1].startswith("ERR"))
+
+
+class ColourTests(unittest.TestCase):
+    def setUp(self):
+        from equilibrium import theme
+
+        # The chosen mode is saved, so point the theme's settings at a file of the test's own.
+        ini = str(Path(tempfile.mkdtemp()) / "settings.ini")
+        patch = mock.patch.object(theme, "QSettings", lambda *a: QSettings(ini, QSettings.Format.IniFormat))
+        patch.start()
+        self.addCleanup(patch.stop)
+        self.addCleanup(theme.set_mode, theme.mode, app)
+
+    def test_values_follow_light_and_dark_mode(self):
+        from equilibrium import theme
+        from equilibrium.ui.states import level_color, value_color
+
+        cfg = Config()
+        for mode in ("dark", "light"):
+            theme.set_mode(mode, app)
+            self.assertEqual(theme.TEXT, theme.PALETTES[mode]["TEXT"])
+            self.assertEqual(value_color("pack.voltage", 500.0, cfg), theme.TEXT, mode)
+            self.assertEqual(value_color("cell.avg", 3.7, cfg), theme.TEXT, mode)
+            self.assertEqual(value_color("cell.avg", 3.7, cfg, normal=theme.NEUTRAL), theme.NEUTRAL, mode)
+            self.assertEqual(value_color("cell.max", 9.0, cfg), theme.FAULT, mode)
+            self.assertEqual(value_color("temp.max", cfg["temp_ot_warn"], cfg), theme.WARN, mode)
+            self.assertEqual(value_color("cell.delta", 500.0, cfg), theme.WARN, mode)
+            self.assertEqual(value_color("pack.voltage", None, cfg), theme.TEXT_FAINT, mode)
+            self.assertEqual(value_color("pack.voltage", 500.0, cfg, stale=True), theme.STALE, mode)
+            self.assertEqual(level_color("normal"), theme.TEXT, mode)
+            self.assertEqual(level_color("fault"), theme.FAULT, mode)
 
 
 class ScreenTests(unittest.TestCase):

@@ -17,7 +17,6 @@ from equilibrium.ui.states import LEVEL_COLORS, cell_level
 from equilibrium.ui.widgets import LegendRow, Segmented, SettingsForm, colored, screen_layout, write_button
 
 
-
 def nice_ticks(lo: float, hi: float, target: int = 6) -> list[float]:
     span = hi - lo
     if span <= 0:
@@ -104,7 +103,8 @@ class VoltageChart(QWidget):
             p.drawLine(QPointF(plot.left(), y), QPointF(plot.right(), y))
             p.setPen(theme.color(theme.TEXT_FAINT))
             text = f"{tick:+.0f}" if self.mode == self.DEVIATION else f"{tick:.2f}"
-            p.drawText(QRectF(0, y - 8, left - 8, 16), Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter, text)
+            p.drawText(QRectF(0, y - 8, left - 8, 16), Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter,
+                       text)
         p.setPen(theme.color(theme.TEXT_FAINT))
         p.drawText(QRectF(0, 0, left - 8, top - 6), Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignBottom, unit)
 
@@ -122,7 +122,8 @@ class VoltageChart(QWidget):
             p.fillRect(QRectF(gx - 3, plot.top(), group_w + 6, plot.height()), theme.color(theme.SURFACE))
             p.setPen(theme.color(theme.TEXT_MUTED))
             name = f"Segment {s + 1}" if group_w > 90 else f"S{s + 1}"
-            p.drawText(QRectF(gx, 0, group_w, top - 6), Qt.AlignmentFlag.AlignCenter | Qt.AlignmentFlag.AlignBottom, name)
+            p.drawText(QRectF(gx, 0, group_w, top - 6), Qt.AlignmentFlag.AlignCenter | Qt.AlignmentFlag.AlignBottom,
+                       name)
             for i in range(per):
                 n = s * per + i + 1
                 v = values[n - 1]

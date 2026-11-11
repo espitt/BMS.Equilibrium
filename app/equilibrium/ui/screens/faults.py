@@ -10,6 +10,7 @@ from PySide6.QtWidgets import (
     QCheckBox,
     QGridLayout,
     QHeaderView,
+    QLabel,
     QSplitter,
     QTableWidget,
     QTableWidgetItem,
@@ -20,7 +21,7 @@ from PySide6.QtWidgets import (
 
 from equilibrium import theme
 from equilibrium.bms.layout import temp_id
-from equilibrium.bms.store import Fault
+from equilibrium.bms.store import SEVERITIES, Fault, worst_severity
 from equilibrium.ui.context import AppContext
 from equilibrium.ui.screens.base import Screen
 from equilibrium.ui.screens.voltages import VoltageChart
@@ -46,13 +47,14 @@ class FaultsScreen(Screen):
     def __init__(self, ctx: AppContext) -> None:
         super().__init__(ctx)
         self.shown: list[Fault] = []
-        self.severities = {"critical", "warning", "info"}
+        self.severities = set(SEVERITIES)
         box, self.header = screen_layout(self, "Faults")
 
         self.tabs = QTabBar()
         self.tabs.addTab("Present")
         self.tabs.addTab("History")
         self.tabs.setDrawBase(False)
+        self.tabs.setExpanding(False)  # Tabs as wide as their names, at the left
         self.tabs.currentChanged.connect(lambda _i: self._rebuild())
         box.addWidget(self.tabs)
 
@@ -63,6 +65,7 @@ class FaultsScreen(Screen):
         self.table = QTableWidget(0, len(COLUMNS))
         self.table.setHorizontalHeaderLabels(COLUMNS)
         self.table.verticalHeader().hide()
+        self.table.verticalHeader().setDefaultSectionSize(26)
         self.table.setShowGrid(False)
         self.table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self.table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
@@ -80,17 +83,18 @@ class FaultsScreen(Screen):
         self.detail_title = label("Select a fault to see the pack as it was when the fault happened.", "muted",
                                   wrap=True)
         self.detail_title.setTextFormat(Qt.TextFormat.RichText)
+        self.detail_title.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop)
         self.detail.box.addWidget(self.detail_title)
         self.frame_values = QWidget()
         self.frame_grid = QGridLayout(self.frame_values)
         self.frame_grid.setContentsMargins(0, 0, 0, 0)
         self.frame_grid.setHorizontalSpacing(24)
-        self.frame_labels: dict[str, tuple] = {}
+        self.frame_labels: dict[str, QLabel] = {}
         for i, cid in enumerate(FREEZE_FRAME):
             info = ctx.data.channels[cid]
             caption = label(info.name, "tileCaption")
             value = label("—")
-            value.setStyleSheet("font-size: 15px; font-weight: 600;")
+            value.setStyleSheet("font-size: 14px; font-weight: 600;")
             cell = QVBoxLayout()
             cell.setSpacing(0)
             cell.addWidget(caption)
@@ -114,7 +118,7 @@ class FaultsScreen(Screen):
                                       "Clear latched faults whose condition has gone. Active faults stay."))
         panel.section("Show")
         self.filters: dict[str, QCheckBox] = {}
-        for severity in ("critical", "warning", "info"):
+        for severity in SEVERITIES:
             box_ = QCheckBox(severity.capitalize())
             box_.setChecked(True)
             box_.toggled.connect(lambda on, s=severity: self._filter(s, on))
@@ -127,18 +131,12 @@ class FaultsScreen(Screen):
                    "Double-click a fault to plot its location.")
         panel.finish()
 
-        self._style_filters()
         ctx.data.faultsChanged.connect(self._rebuild)
         ctx.linkChanged.connect(lambda: self.clear.setEnabled(ctx.connected))
         self.clear.setEnabled(ctx.connected)
         self._rebuild()
 
-    def _style_filters(self) -> None:
-        for severity, box_ in self.filters.items():
-            box_.setStyleSheet(f"QCheckBox {{ color: {SEVERITY_COLORS[severity]}; }}")
-
     def restyle(self) -> None:
-        self._style_filters()
         self._rebuild()
         self.chart.update()
 
@@ -163,16 +161,15 @@ class FaultsScreen(Screen):
         data = self.ctx.data
         selected = self.shown[self.table.currentRow()] if 0 <= self.table.currentRow() < len(self.shown) else None
         source = data.present_faults() if self.tabs.currentIndex() == 0 else list(data.faults)
-        order = {"critical": 0, "warning": 1, "info": 2}
         self.shown = sorted((f for f in source if f.severity in self.severities),
-                            key=lambda f: (not f.active, order[f.severity], -f.first_seen))
+                            key=lambda f: (not f.active, SEVERITIES.index(f.severity), -f.first_seen))
         self.table.blockSignals(True)
         self.table.setRowCount(len(self.shown))
         for row, fault in enumerate(self.shown):
             status_hex = {"Active": SEVERITY_COLORS[fault.severity], "Latched": theme.TEXT,
                           "Cleared": theme.TEXT_FAINT}[fault.status]
             cells = [
-                (f"● {fault.severity.capitalize()}", SEVERITY_COLORS[fault.severity]),
+                (fault.severity.capitalize(), SEVERITY_COLORS[fault.severity]),
                 (f"0x{fault.code:04X}", theme.TEXT_MUTED),
                 (fault.name, theme.TEXT),
                 (self._location_text(fault), theme.TEXT_MUTED),
@@ -194,10 +191,10 @@ class FaultsScreen(Screen):
         present = data.present_faults()
         self.tabs.setTabText(0, f"Present ({len(present)})")
         self.tabs.setTabText(1, f"History ({len(data.faults)})")
-        counts = {s: sum(1 for f in present if f.severity == s) for s in ("critical", "warning", "info")}
+        counts = {s: sum(1 for f in present if f.severity == s) for s in SEVERITIES}
         lines = [colored(f"{n} {s}", SEVERITY_COLORS[s] if n else theme.TEXT_FAINT) for s, n in counts.items()]
         self.summary.setText("<br>".join(lines) if data.connected else "Not connected")
-        worst = next((s for s in ("critical", "warning", "info") if counts[s]), None)
+        worst = worst_severity(present)
         self.header.summary.setText(
             colored(f"{len(present)} present", SEVERITY_COLORS[worst]) if worst else "No faults present"
         )
@@ -214,7 +211,7 @@ class FaultsScreen(Screen):
         snap = fault.snapshot
         cfg = self.ctx.config
         self.detail_title.setText(
-            f"<span style='color:{theme.TEXT}; font-size:14px; font-weight:600'>Freeze frame</span> "
+            f"<span style='color:{theme.TEXT}; font-weight:600'>Freeze frame</span> "
             f"&nbsp;{colored(fault.name, SEVERITY_COLORS[fault.severity])} at "
             f"{time.strftime('%H:%M:%S', time.localtime(fault.first_seen))}"
         )
@@ -222,7 +219,7 @@ class FaultsScreen(Screen):
             info = self.ctx.data.channels[cid]
             value = snap.get(cid)
             widget.setText(info.format(value))
-            widget.setStyleSheet(f"font-size: 15px; font-weight: 600; "
+            widget.setStyleSheet(f"font-size: 14px; font-weight: 600; "
                                  f"color: {value_color(cid, value, cfg, info.labels)};")
         layout = self.ctx.layout
         temps = sorted(((snap[temp_id(t.number)], t) for t in layout.thermistors if temp_id(t.number) in snap),

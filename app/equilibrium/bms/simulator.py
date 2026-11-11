@@ -110,7 +110,11 @@ class Simulator(QObject):
         self.data.resolve_fault(0x0301, "")
         old.latched = False
         self.timer.start()
-        self.received.emit(f"Equilibrium BMS {self.firmware}. Type 'help' for commands.")
+        self.received.emit(self._banner())
+
+    def _banner(self) -> str:
+        """What the BMS prints when it starts."""
+        return f"Equilibrium BMS {self.firmware}. Type 'help' for commands."
 
     def stop(self) -> None:
         self.timer.stop()
@@ -153,7 +157,7 @@ class Simulator(QObject):
             self.data.device["Firmware"] = self.firmware
             self.state = "Init"
             self.received.emit("BOOT image verified, restarting")
-            self.received.emit(f"Equilibrium BMS {self.firmware}. Type 'help' for commands.")
+            self.received.emit(self._banner())
             self.timer.start()
             on_progress(1.0)
             on_done("")

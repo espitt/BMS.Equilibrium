@@ -2,10 +2,8 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-
 from PySide6.QtCore import QSize, Qt, QTimer
-from PySide6.QtGui import QCloseEvent, QIcon, QKeySequence, QShortcut
+from PySide6.QtGui import QCloseEvent, QIcon, QKeySequence, QResizeEvent, QShortcut
 from PySide6.QtWidgets import (
     QFrame,
     QHBoxLayout,
@@ -20,7 +18,8 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from equilibrium import theme
+from equilibrium import ICON_PATH, theme
+from equilibrium.bms.store import worst_severity
 from equilibrium.ui.connection import ConnectionPage
 from equilibrium.ui.context import AppContext
 from equilibrium.ui.screens.charging import ChargingScreen
@@ -33,7 +32,7 @@ from equilibrium.ui.screens.terminal import TerminalScreen
 from equilibrium.ui.screens.thermals import ThermalsScreen
 from equilibrium.ui.screens.voltages import VoltagesScreen
 from equilibrium.ui.states import SEVERITY_COLORS
-from equilibrium.ui.widgets import button, label
+from equilibrium.ui.widgets import Badge, button, label
 
 SCREENS = [DashboardScreen, VoltagesScreen, ThermalsScreen, PlotsScreen, FaultsScreen, ChargingScreen,
            SettingsScreen, CommsScreen, TerminalScreen]
@@ -46,7 +45,6 @@ class NavButton(QPushButton):
         super().__init__(text)
         self.setObjectName("navButton")
         self.setCheckable(True)
-        self.setCursor(Qt.CursorShape.PointingHandCursor)
         self.badge = QLabel(self)
         self.badge.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.badge.hide()
@@ -55,8 +53,8 @@ class NavButton(QPushButton):
         self.badge.setVisible(count > 0)
         if count:
             self.badge.setText(str(count))
-            self.badge.setStyleSheet(f"background: {hex_code}; color: #ffffff; border-radius: 8px; "
-                                     f"font-size: 11px; font-weight: 700; padding: 0 5px;")
+            self.badge.setStyleSheet(f"background: {hex_code}; color: {theme.ON_ACCENT}; border-radius: 8px; "
+                                     f"font-size: 11px; font-weight: 600; padding: 0 5px;")
             self.badge.adjustSize()
             self._place_badge()
 
@@ -64,7 +62,7 @@ class NavButton(QPushButton):
         w = max(18, self.badge.sizeHint().width())
         self.badge.setGeometry(self.width() - w - 10, (self.height() - 16) // 2, w, 16)
 
-    def resizeEvent(self, event) -> None:
+    def resizeEvent(self, event: QResizeEvent) -> None:
         super().resizeEvent(event)
         self._place_badge()
 
@@ -76,7 +74,7 @@ class Banner(QFrame):
         super().__init__()
         self.ctx = ctx
         row = QHBoxLayout(self)
-        row.setContentsMargins(16, 8, 12, 8)
+        row.setContentsMargins(18, 5, 12, 5)
         self.text = label("")
         self.text.setTextFormat(Qt.TextFormat.RichText)
         row.addWidget(self.text, 1)
@@ -90,16 +88,15 @@ class Banner(QFrame):
         ctx.linkChanged.connect(self.refresh)
 
     def _style(self, hex_code: str) -> None:
-        c = theme.color(hex_code)
-        self.setStyleSheet(f"Banner {{ background: rgba({c.red()},{c.green()},{c.blue()},30); "
-                           f"border-bottom: 1px solid rgba({c.red()},{c.green()},{c.blue()},90); }}")
+        self.setStyleSheet(f"Banner {{ background: {theme.rgba(hex_code, 28)}; "
+                           f"border-bottom: 1px solid {theme.BORDER}; }}")
 
     def refresh(self) -> None:
         data = self.ctx.data
         if not self.ctx.connected:
             self._style(theme.NEUTRAL)
-            self.text.setText(f"<b>Offline</b> <span style='color:{theme.TEXT_MUTED}'>· Editing the configuration "
-                              "without a BMS. Live values are unavailable.</span>")
+            self.text.setText(f"<b>Offline</b>&nbsp;&nbsp; <span style='color:{theme.TEXT_MUTED}'>Editing the "
+                              "configuration without a BMS. Live values are unavailable.</span>")
             self.action.show()
             self.show()
             return
@@ -117,8 +114,8 @@ class Banner(QFrame):
             where = f" in segment{'s' if len(segments) > 1 else ''} {', '.join(map(str, segments))}" if segments else ""
             what = f"{len(stale)} channel{'s' if len(stale) != 1 else ''}{where} not updating"
         self._style(theme.WARN)
-        self.text.setText(f"<b style='color:{theme.WARN}'>Stale data</b> "
-                          f"<span style='color:{theme.TEXT_MUTED}'>· {what}{age}. Affected values are greyed "
+        self.text.setText(f"<b style='color:{theme.WARN}'>Stale data</b>&nbsp;&nbsp; "
+                          f"<span style='color:{theme.TEXT_MUTED}'>{what}{age}. Affected values are greyed "
                           f"out.</span>")
         self.show()
 
@@ -151,18 +148,18 @@ class MainWindow(QMainWindow):
         # Navigation rail
         rail = QFrame()
         rail.setObjectName("navRail")
-        rail.setFixedWidth(178)
+        rail.setFixedWidth(172)
         rail_box = QVBoxLayout(rail)
-        rail_box.setContentsMargins(0, 14, 0, 12)
-        rail_box.setSpacing(2)
+        rail_box.setContentsMargins(0, 10, 0, 12)
+        rail_box.setSpacing(0)
         brand = QHBoxLayout()
-        brand.setContentsMargins(14, 0, 14, 12)
+        brand.setContentsMargins(11, 0, 12, 10)
+        brand.setSpacing(6)
         # The logo doubles as the light/dark mode switch.
         self.logo = QToolButton()
         self.logo.setObjectName("logoToggle")
-        self.logo.setIcon(QIcon(str(Path(__file__).resolve().parent.parent / "assets" / "icon.png")))
-        self.logo.setIconSize(QSize(26, 26))
-        self.logo.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.logo.setIcon(QIcon(str(ICON_PATH)))
+        self.logo.setIconSize(QSize(22, 22))
         self.logo.setAutoRaise(True)
         self.logo.clicked.connect(theme.toggle)
         brand.addWidget(self.logo)
@@ -178,22 +175,21 @@ class MainWindow(QMainWindow):
             shortcut = QShortcut(QKeySequence(f"Ctrl+{i + 1}"), self)
             shortcut.activated.connect(lambda index=i: self.show_screen(index))
         rail_box.addStretch(1)
-        self.link_label = label("", "muted", wrap=True)
-        self.link_label.setTextFormat(Qt.TextFormat.RichText)
-        self.link_label.setContentsMargins(14, 0, 14, 4)
-        rail_box.addWidget(self.link_label)
-        link_row = QHBoxLayout()
-        link_row.setContentsMargins(12, 0, 12, 0)
+        link_box = QVBoxLayout()
+        link_box.setContentsMargins(12, 0, 12, 0)
+        link_box.setSpacing(8)
+        self.link_state = Badge()  # A dot for connected or not, then what to
+        link_box.addWidget(self.link_state)
         self.link_button = button("Disconnect", self._toggle_link)
-        link_row.addWidget(self.link_button)
-        rail_box.addLayout(link_row)
+        link_box.addWidget(self.link_button)
+        rail_box.addLayout(link_box)
         row.addWidget(rail)
 
         # Configuration panel for the current screen
-        side = QFrame()
-        side.setObjectName("sidePanel")
-        side.setFixedWidth(300)
-        side_box = QVBoxLayout(side)
+        self.side = QFrame()
+        self.side.setObjectName("sidePanel")
+        self.side.setFixedWidth(288)
+        side_box = QVBoxLayout(self.side)
         side_box.setContentsMargins(0, 0, 0, 0)
         self.panels = QStackedWidget()
         for screen in self.screens:
@@ -203,8 +199,9 @@ class MainWindow(QMainWindow):
             scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
             scroll.setWidget(screen.panel)
             self.panels.addWidget(scroll)
+            screen.panelChanged.connect(self._place_panel)
         side_box.addWidget(self.panels)
-        row.addWidget(side)
+        row.addWidget(self.side)
 
         # Content
         content = QWidget()
@@ -240,6 +237,11 @@ class MainWindow(QMainWindow):
             b.setChecked(i == index)
         self.stack.setCurrentIndex(index)
         self.panels.setCurrentIndex(index)
+        self._place_panel()
+
+    def _place_panel(self) -> None:
+        """Show the sidebar unless the screen on show has asked for its room."""
+        self.side.setVisible(self.screens[self.stack.currentIndex()].show_panel)
 
     def screen_index(self, cls) -> int:
         return next(i for i, s in enumerate(self.screens) if isinstance(s, cls))
@@ -274,10 +276,10 @@ class MainWindow(QMainWindow):
 
     def _link_changed(self) -> None:
         if self.ctx.connected:
-            self.link_label.setText(f"<span style='color:{theme.OK}'>●</span> {self.ctx.data.link_name}")
+            self.link_state.set_state(self.ctx.data.link_name, theme.OK)
             self.link_button.setText("Disconnect")
         else:
-            self.link_label.setText(f"<span style='color:{theme.TEXT_FAINT}'>●</span> Offline")
+            self.link_state.set_state("Offline", theme.TEXT_FAINT)
             self.link_button.setText("Connect…")
         self._update_fault_badge()
 
@@ -289,7 +291,7 @@ class MainWindow(QMainWindow):
 
     def _update_fault_badge(self) -> None:
         present = self.ctx.data.present_faults()
-        worst = next((s for s in ("critical", "warning", "info") if any(f.severity == s for f in present)), "info")
+        worst = worst_severity(present) or "info"
         self.nav[self.screen_index(FaultsScreen)].set_badge(len(present), SEVERITY_COLORS[worst])
 
     def closeEvent(self, event: QCloseEvent) -> None:

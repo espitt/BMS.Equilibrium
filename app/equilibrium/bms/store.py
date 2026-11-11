@@ -7,6 +7,7 @@ update(). Screens only read from here.
 from __future__ import annotations
 
 import time
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 
 import numpy as np
@@ -14,7 +15,7 @@ from PySide6.QtCore import QObject, QTimer, Signal
 
 from equilibrium.bms.layout import PackLayout, build_channels
 
-SEVERITIES = ("critical", "warning", "info")
+SEVERITIES = ("critical", "warning", "info")  # Worst first
 
 
 class History:
@@ -66,6 +67,12 @@ class Fault:
         if self.active:
             return "Active"
         return "Latched" if self.latched else "Cleared"
+
+
+def worst_severity(faults: Iterable[Fault]) -> str | None:
+    """The most serious severity among the faults, or None when there are none."""
+    found = {fault.severity for fault in faults}
+    return next((severity for severity in SEVERITIES if severity in found), None)
 
 
 class BmsData(QObject):

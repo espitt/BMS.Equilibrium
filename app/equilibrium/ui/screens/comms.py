@@ -4,16 +4,32 @@ from __future__ import annotations
 
 from PySide6.QtCore import QPointF, QRectF, Qt, Signal
 from PySide6.QtGui import QFont, QMouseEvent, QPainter, QPaintEvent, QPen
-from PySide6.QtWidgets import QAbstractItemView, QHeaderView, QSizePolicy, QTableWidget, QTableWidgetItem, QToolTip, QWidget
+from PySide6.QtWidgets import (
+    QAbstractItemView,
+    QHeaderView,
+    QSizePolicy,
+    QTableWidget,
+    QTableWidgetItem,
+    QToolTip,
+    QWidget,
+)
 
 from equilibrium import theme
-from equilibrium.bms.layout import board_id
+from equilibrium.bms.layout import PackLayout, Thermistor, board_id
 from equilibrium.ui.context import AppContext
 from equilibrium.ui.screens.base import Screen
 from equilibrium.ui.widgets import button, colored, label, screen_layout
 
 RECENT_ERRORS_S = 10.0
 COLUMNS = ["Board", "Chain address", "Cells", "Thermistors", "PEC errors", "Die temperature", "Status"]
+
+
+def board_members(layout: PackLayout, board: tuple[int, int]) -> tuple[list[int], list[Thermistor]]:
+    """The cell numbers and the thermistors that one slave board reads."""
+    segment, slave = board
+    cells = [n for n in layout.segment_cells(segment) if layout.cell_position(n)[1] == slave]
+    thermistors = [t for t in layout.segment_thermistors(segment) if t.slave == slave]
+    return cells, thermistors
 
 
 class BoardHealth:
@@ -26,11 +42,11 @@ class BoardHealth:
     def status(self, ctx: AppContext, board: tuple[int, int]) -> tuple[str, str]:
         data = ctx.data
         cid = board_id(*board, "pec")
-        if data.value(cid) is None:
+        count = data.value(cid)
+        if count is None:
             return "No data", theme.TEXT_FAINT
         if data.is_stale(cid):
             return "Not responding", theme.STALE
-        count = data.value(cid)
         if board in self.last_count and count > self.last_count[board]:
             self.last_rise[board] = data.now()
         self.last_count[board] = count
@@ -91,9 +107,9 @@ class ChainView(QWidget):
                 p.drawLine(QPointF(a.center().x(), a.bottom()), QPointF(r.center().x(), r.top()))
 
         # Master
-        p.setPen(QPen(theme.color(theme.ACCENT if self.ctx.data.connected else theme.BORDER), 1.5))
+        p.setPen(QPen(theme.color(theme.ACCENT if self.ctx.data.connected else theme.BORDER), 1))
         p.setBrush(theme.color(theme.ACCENT_TINT))
-        p.drawRoundedRect(master, 6, 6)
+        p.drawRoundedRect(master, theme.RADIUS, theme.RADIUS)
         p.setPen(theme.color(theme.ACCENT))
         p.drawText(master, Qt.AlignmentFlag.AlignCenter, "Master")
 
@@ -108,10 +124,12 @@ class ChainView(QWidget):
         data = self.ctx.data
         for board, rect in self.rects.items():
             status, hex_code = self.health.status(self.ctx, board)
-            border = theme.ACCENT if board == self.selected else hex_code
-            p.setPen(QPen(theme.color(border), 2 if board == self.selected else 1.2))
+            # A healthy board is outlined like any other box; only trouble and selection are coloured.
+            quiet = theme.BORDER if hex_code == theme.OK else hex_code
+            border = theme.ACCENT if board == self.selected else quiet
+            p.setPen(QPen(theme.color(border), 2 if board == self.selected else 1))
             p.setBrush(theme.color(theme.SURFACE_3 if board == self.hover else theme.SURFACE_2))
-            p.drawRoundedRect(rect, 6, 6)
+            p.drawRoundedRect(rect, theme.RADIUS, theme.RADIUS)
             p.setBrush(theme.color(hex_code))
             p.setPen(Qt.PenStyle.NoPen)
             p.drawEllipse(QPointF(rect.left() + 12, rect.top() + 13), 4, 4)
@@ -120,7 +138,10 @@ class ChainView(QWidget):
                        f"Slave {board[0]}.{board[1]}")
             pec = data.value(board_id(*board, "pec"))
             die = data.value(board_id(*board, "die"))
-            detail = "—" if pec is None else f"PEC {pec:.0f} · {die:.0f} °C" if die is not None else f"PEC {pec:.0f}"
+            if pec is None:
+                detail = "—"
+            else:
+                detail = f"PEC {pec:.0f}, {die:.0f} °C" if die is not None else f"PEC {pec:.0f}"
             p.setPen(theme.color(theme.TEXT_MUTED))
             p.drawText(QRectF(rect.left() + 10, rect.top() + 21, rect.width() - 14, 16), Qt.AlignmentFlag.AlignLeft,
                        detail)
@@ -140,9 +161,9 @@ class ChainView(QWidget):
         status, hex_code = self.health.status(self.ctx, board)
         address = self.ctx.layout.boards().index(board) + 1
         QToolTip.showText(event.globalPosition().toPoint(),
-                          f"<b>Slave board {board[0]}.{board[1]}</b><br>Segment {board[0]} · chain address "
-                          f"{address}<br>{colored(status, hex_code)}<br><span style='color:#5d6474'>Click to select"
-                          f"</span>", self)
+                          f"<b>Slave board {board[0]}.{board[1]}</b><br>Segment {board[0]}, chain address "
+                          f"{address}<br>{colored(status, hex_code)}<br>"
+                          f"{colored('Click to select', theme.TEXT_FAINT)}", self)
 
     def mouseReleaseEvent(self, event: QMouseEvent) -> None:
         board = self._board_at(event.position())
@@ -173,6 +194,7 @@ class CommsScreen(Screen):
         self.table = QTableWidget(len(boards), len(COLUMNS))
         self.table.setHorizontalHeaderLabels(COLUMNS)
         self.table.verticalHeader().hide()
+        self.table.verticalHeader().setDefaultSectionSize(26)
         self.table.setShowGrid(False)
         self.table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         self.table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
@@ -232,8 +254,7 @@ class CommsScreen(Screen):
             return
         layout = self.ctx.layout
         s, b = board
-        cells = [n for n in layout.segment_cells(s) if layout.cell_position(n)[1] == b]
-        therms = [t for t in layout.segment_thermistors(s) if t.slave == b]
+        cells, therms = board_members(layout, board)
         status, hex_code = self.health.status(self.ctx, board)
         self.selected_label.setText(
             "<br>".join([
@@ -258,8 +279,7 @@ class CommsScreen(Screen):
             pec = data.value(board_id(s, b, "pec"))
             die = data.value(board_id(s, b, "die"))
             total_pec += int(pec or 0)
-            cells = [n for n in layout.segment_cells(s) if layout.cell_position(n)[1] == b]
-            therms = [t for t in layout.segment_thermistors(s) if t.slave == b]
+            cells, therms = board_members(layout, board)
             texts = [
                 (f"Slave {s}.{b}", theme.TEXT),
                 (str(row + 1), theme.TEXT_MUTED),

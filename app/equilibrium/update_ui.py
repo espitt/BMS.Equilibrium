@@ -12,6 +12,7 @@ from PySide6.QtWidgets import QApplication, QMainWindow, QMessageBox, QProgressD
 from equilibrium import __version__, updater
 from equilibrium_setup import core
 
+
 class UpdateController(QObject):
     # Emitted when any check finishes, before any prompt is shown.
     check_finished = Signal()

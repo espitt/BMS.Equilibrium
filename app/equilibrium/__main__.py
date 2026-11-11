@@ -1,20 +1,19 @@
 """Starts the app: splash screen, update check, then the main window."""
 
 import sys
-from pathlib import Path
 
 from PySide6.QtCore import QTimer
 from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import QApplication
 
-from equilibrium import splash, theme
+from equilibrium import ICON_PATH, splash, theme
 from equilibrium.ui.main_window import MainWindow
 
 
 def main() -> int:
     app = QApplication(sys.argv)
     app.setApplicationName("Equilibrium")
-    icon = QIcon(str(Path(__file__).parent / "assets" / "icon.png"))
+    icon = QIcon(str(ICON_PATH))
     app.setWindowIcon(icon)
     theme.apply(app)
 

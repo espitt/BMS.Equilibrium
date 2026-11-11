@@ -12,7 +12,9 @@ from dataclasses import dataclass
 from html import escape
 from pathlib import Path
 
-LAYOUT_FILE = Path(__file__).resolve().parent.parent / "assets" / "pack_layout.json"
+from equilibrium import ASSETS_DIR
+
+LAYOUT_FILE = ASSETS_DIR / "pack_layout.json"
 
 AMS_STATES = ("Init", "Idle", "Precharge", "Drive", "Charging", "Fault")
 PRECHARGE_STATES = ("Open", "Precharging", "Closed", "Failed")

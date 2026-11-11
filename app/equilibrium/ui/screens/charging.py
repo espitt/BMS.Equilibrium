@@ -1,16 +1,54 @@
-"""Charging: readiness checks, start and stop, live progress. Limits are set in the panel."""
+"""Charging: readiness checks, start and stop, live progress. Limits are set in the panel.
+
+The Games button swaps this for a narrow column holding the same stats, hides the options panel, and
+gives the rest of the screen to a game. See _game_hold for when play stops.
+"""
 
 from __future__ import annotations
 
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QGridLayout, QHBoxLayout, QLabel, QProgressBar, QVBoxLayout
+from PySide6.QtGui import QMouseEvent
+from PySide6.QtWidgets import QHBoxLayout, QLabel, QProgressBar, QVBoxLayout, QWidget
 
 from equilibrium import theme
 from equilibrium.bms.layout import CHARGER_STATES
+from equilibrium.bms.store import SEVERITIES
 from equilibrium.ui.context import AppContext
+from equilibrium.ui.games.arcade import Arcade
 from equilibrium.ui.screens.base import Screen
-from equilibrium.ui.states import STATE_COLORS
-from equilibrium.ui.widgets import Badge, Card, SettingsForm, Tile, button, colored, label, screen_layout, write_button
+from equilibrium.ui.states import STATE_COLORS, value_color
+from equilibrium.ui.widgets import (
+    Badge,
+    Card,
+    ReadoutGrid,
+    SettingsForm,
+    Tile,
+    button,
+    colored,
+    label,
+    screen_layout,
+    section_label,
+    write_button,
+)
+
+COMPACT_WIDTH = 300
+CHECKS = {
+    "link": "BMS connected",
+    "charger": "Charger connected",
+    "faults": "No critical faults",
+    "temps": "Temperatures within charging limits",
+    "cells": "Cells below charge target",
+}
+VALUES = [  # Channel and caption of each live value, in both the full and the condensed layout
+    ("pack.voltage", "Pack voltage"),
+    ("pack.current", "Pack current"),
+    ("charger.voltage", "Charger voltage"),
+    ("charger.current", "Charger current"),
+    ("cell.max", "Max cell"),
+    ("temp.max", "Max temperature"),
+    ("bal.count", "Cells balancing"),
+    ("cell.delta", "Cell delta"),
+]
 
 
 class Check(QLabel):
@@ -18,6 +56,7 @@ class Check(QLabel):
         super().__init__()
         self.text_ = text
         self.setTextFormat(Qt.TextFormat.RichText)
+        self.setWordWrap(True)  # The condensed column is narrow.
         self.set(None, "")
 
     def set(self, ok: bool | None, detail: str) -> None:
@@ -26,17 +65,124 @@ class Check(QLabel):
         self.setText(f"<span style='color:{hex_code}; font-weight:700'>{mark}</span>&nbsp; {self.text_}{extra}")
 
 
+def progress_bar(height: int) -> QProgressBar:
+    bar = QProgressBar()
+    bar.setRange(0, 1000)
+    bar.setTextVisible(False)
+    bar.setFixedHeight(height)
+    return bar
+
+
+class ValueRow(QWidget):
+    """One live value on a single line: a Tile, condensed. Hover says where it comes from; a click plots it."""
+
+    def __init__(self, ctx: AppContext, cid: str, caption: str) -> None:
+        super().__init__()
+        self.ctx = ctx
+        self.cid = cid
+        self.info = ctx.data.channels[cid]
+        row = QHBoxLayout(self)
+        row.setContentsMargins(0, 0, 0, 0)
+        row.addWidget(label(caption, "muted"), 1)
+        self.value = label("—")
+        row.addWidget(self.value)
+
+    def refresh(self) -> None:
+        data = self.ctx.data
+        value = data.value(self.cid)
+        hex_code = value_color(self.cid, value, self.ctx.config, self.info.labels, stale=data.is_stale(self.cid))
+        self.value.setText(self.info.format(value))
+        self.value.setStyleSheet(f"font-weight: 600; color: {hex_code};")
+        self.setToolTip(data.tooltip(self.cid))
+
+    def mouseReleaseEvent(self, event: QMouseEvent) -> None:
+        if event.button() == Qt.MouseButton.LeftButton:
+            self.ctx.plot(self.cid)
+        super().mouseReleaseEvent(event)
+
+
+class CompactStats(Card):
+    """Everything the Charging screen shows, in one narrow column, for when a game has the rest of the screen.
+
+    It has the same parts under the same names as the full layout, so the screen fills in both alike.
+    """
+
+    soc_px = 26
+
+    def __init__(self, ctx: AppContext) -> None:
+        super().__init__("Charging")
+        self.setFixedWidth(COMPACT_WIDTH)
+        self.box.setSpacing(5)
+        self.state_badge = Badge(compact=True)
+        state_row = QHBoxLayout()
+        state_row.addWidget(self.state_badge)
+        state_row.addStretch(1)
+        self.box.addLayout(state_row)
+        self.soc = label("—")
+        self.box.addWidget(self.soc)
+        self.soc_bar = progress_bar(6)
+        self.box.addWidget(self.soc_bar)
+        self.eta = label("", "muted", wrap=True)
+        self.box.addWidget(self.eta)
+        controls = QHBoxLayout()
+        self.start = button("Start charging", lambda: ctx.send("charge start"), "primary")
+        self.stop = button("Stop", lambda: ctx.send("charge stop"))
+        controls.addWidget(self.start, 2)
+        controls.addWidget(self.stop, 1)
+        self.box.addLayout(controls)
+
+        self.box.addWidget(section_label("Ready to charge"))
+        self.checks = {key: Check(text) for key, text in CHECKS.items()}
+        for check in self.checks.values():
+            self.box.addWidget(check)
+
+        self.box.addWidget(section_label("Live values"))
+        self.tiles = [ValueRow(ctx, cid, caption) for cid, caption in VALUES]
+        for row in self.tiles:
+            self.box.addWidget(row)
+
+        self.box.addWidget(section_label("Highest cell against target"))
+        self.target_bar = progress_bar(6)
+        self.box.addWidget(self.target_bar)
+        self.target_text = label("", "muted", wrap=True)
+        self.box.addWidget(self.target_text)
+        self.box.addStretch(1)
+
+
 class ChargingScreen(Screen):
     title = "Charging"
     nav_label = "Charging"
+    soc_px = 32
 
     def __init__(self, ctx: AppContext) -> None:
         super().__init__(ctx)
         box, self.header = screen_layout(self, "Charging")
+        self.games_button = button("Games", self._set_games,
+                                   tooltip="Play a game. The charging stats move into a narrow column beside it.")
+        self.games_button.setCheckable(True)
+        self.header.right.addWidget(self.games_button)
+        self._was_charging = False
+
+        # Either the full layout, or the condensed column with a game beside it.
+        columns = QHBoxLayout()
+        columns.setSpacing(12)
+        box.addLayout(columns, 1)
+        self.full = QWidget()
+        stats = QVBoxLayout(self.full)
+        stats.setContentsMargins(0, 0, 0, 0)
+        stats.setSpacing(12)
+        columns.addWidget(self.full, 1)
+        self.compact = CompactStats(ctx)
+        self.compact.hide()
+        columns.addWidget(self.compact)
+        self.arcade = Arcade()
+        self.arcade.hide()
+        columns.addWidget(self.arcade, 1)
+        self.views = (self, self.compact)  # Both are filled in by refresh()
 
         top = QHBoxLayout()
         top.setSpacing(12)
-        box.addLayout(top)
+        stats.addLayout(top)
 
         # Status and controls
         status = Card("Status")
@@ -46,67 +192,42 @@ class ChargingScreen(Screen):
         state_row.addStretch(1)
         status.box.addLayout(state_row)
         self.soc = label("—")
-        self.soc.setStyleSheet("font-size: 40px; font-weight: 600;")
         status.box.addWidget(self.soc)
-        self.soc_bar = QProgressBar()
-        self.soc_bar.setRange(0, 1000)
-        self.soc_bar.setTextVisible(False)
-        self.soc_bar.setFixedHeight(8)
+        self.soc_bar = progress_bar(6)
         status.box.addWidget(self.soc_bar)
         self.eta = label("", "muted")
         status.box.addWidget(self.eta)
         controls = QHBoxLayout()
         self.start = button("Start charging", lambda: ctx.send("charge start"), "primary")
         self.stop = button("Stop", lambda: ctx.send("charge stop"))
-        self.start.setMinimumHeight(36)
-        self.stop.setMinimumHeight(36)
-        controls.addWidget(self.start, 2)
-        controls.addWidget(self.stop, 1)
-        status.box.addSpacing(6)
+        self.start.setMinimumWidth(140)
+        self.stop.setMinimumWidth(80)
+        controls.addWidget(self.start)
+        controls.addWidget(self.stop)
+        controls.addStretch(1)
+        status.box.addSpacing(4)
         status.box.addLayout(controls)
         top.addWidget(status, 3)
 
         # Readiness
         ready = Card("Ready to charge")
-        self.checks = {
-            "link": Check("BMS connected"),
-            "charger": Check("Charger connected"),
-            "faults": Check("No critical faults"),
-            "temps": Check("Temperatures within charging limits"),
-            "cells": Check("Cells below charge target"),
-        }
+        self.checks = {key: Check(text) for key, text in CHECKS.items()}
         for check in self.checks.values():
             ready.box.addWidget(check)
         ready.box.addStretch(1)
         top.addWidget(ready, 2)
 
         # Live values
-        grid = QGridLayout()
-        grid.setSpacing(10)
-        self.tiles = [
-            Tile(ctx, "pack.voltage", "Pack voltage"),
-            Tile(ctx, "pack.current", "Pack current"),
-            Tile(ctx, "charger.voltage", "Charger voltage"),
-            Tile(ctx, "charger.current", "Charger current"),
-            Tile(ctx, "cell.max", "Max cell"),
-            Tile(ctx, "temp.max", "Max temperature"),
-            Tile(ctx, "bal.count", "Cells balancing"),
-            Tile(ctx, "cell.delta", "Cell delta"),
-        ]
-        for i, tile in enumerate(self.tiles):
-            grid.addWidget(tile, i // 4, i % 4)
-        box.addLayout(grid)
+        self.tiles = [Tile(ctx, cid, caption) for cid, caption in VALUES]
+        stats.addWidget(ReadoutGrid(self.tiles, columns=4))
 
         target_card = Card("Highest cell against charge target")
-        self.target_bar = QProgressBar()
-        self.target_bar.setRange(0, 1000)
-        self.target_bar.setTextVisible(False)
-        self.target_bar.setFixedHeight(8)
+        self.target_bar = progress_bar(6)
         self.target_text = label("", "muted")
         target_card.box.addWidget(self.target_bar)
         target_card.box.addWidget(self.target_text)
-        box.addWidget(target_card)
-        box.addStretch(1)
+        stats.addWidget(target_card)
+        stats.addStretch(1)
 
         panel = self.panel
         panel.section("Charge limits")
@@ -124,30 +245,52 @@ class ChargingScreen(Screen):
         ctx.data.faultsChanged.connect(self._on_data)
         ctx.config.changed.connect(lambda _key: self._on_data())
 
+    # Games
+
+    def _set_games(self, on: bool) -> None:
+        """Swap the full layout and its options panel for the condensed stats and a game, or back."""
+        self.full.setVisible(not on)
+        self.compact.setVisible(on)
+        self.arcade.setVisible(on)
+        self.show_panel = not on
+        self.panelChanged.emit()
+        self.refresh()
+
+    def _game_hold(self) -> str:
+        """Why no game may be played right now, or "" when the pack needs no attention."""
+        data = self.ctx.data
+        if not data.connected:
+            return "No BMS is connected"
+        active = [f for f in data.faults if f.active and f.severity != "info"]
+        if active:
+            worst = min(active, key=lambda f: SEVERITIES.index(f.severity))
+            return f"{worst.name} ({worst.severity})"
+        if data.stale:
+            return "Some BMS data has stopped updating"
+        return ""
+
     def refresh(self) -> None:
         data = self.ctx.data
         cfg = self.ctx.config
-        for tile in self.tiles:
-            tile.refresh()
 
         state_value = data.value("charger.state")
         state = CHARGER_STATES[int(state_value)] if state_value is not None else None
         stale = data.is_stale("charger.state")
-        self.state_badge.set_state(state or "—", theme.STALE if stale else
-                                   STATE_COLORS["charger.state"].get(state, theme.TEXT_FAINT))
+        state_hex = theme.STALE if stale else STATE_COLORS["charger.state"].get(state, theme.TEXT_FAINT)
         soc = data.value("pack.soc")
-        self.soc.setText(f"{soc:.1f} %" if soc is not None else "—")
-        self.soc.setStyleSheet(f"font-size: 40px; font-weight: 600; color: {theme.STALE if stale else theme.TEXT};")
-        self.soc_bar.setValue(int((soc or 0) * 10))
+        soc_hex = theme.STALE if stale else theme.TEXT
 
         charging = state in ("Charging", "Balancing")
+        self.arcade.set_hold(self._game_hold())
+        if self._was_charging and state == "Complete":
+            self.arcade.pause("Charging has finished")
+        self._was_charging = charging
         current = data.value("pack.current") or 0.0
         capacity = float(cfg["cell_capacity_ah"]) * int(cfg["parallel_count"])
+        eta = ""
         if charging and current < -0.1 and soc is not None:
             hours = (float(cfg["charge_soc_limit"]) - soc) / 100 * capacity / -current
-            self.eta.setText(f"About {max(0, hours) * 60:.0f} min to {cfg['charge_soc_limit']} % at the present current")
-        else:
-            self.eta.setText("")
+            eta = f"About {max(0, hours) * 60:.0f} min to {cfg['charge_soc_limit']} % at the present current"
 
         connected = data.connected
         critical = [f for f in data.present_faults() if f.severity == "critical"]
@@ -156,27 +299,37 @@ class ChargingScreen(Screen):
         temps_ok = None if t_max is None else (t_min >= cfg["charge_temp_min"] and t_max <= cfg["charge_temp_max"])
         cells_ok = None if cell_max is None else cell_max < cfg["charge_target"]
         charger_ok = None if state is None else state != "Disconnected"
-        self.checks["link"].set(connected, "" if connected else "connect on the start screen")
-        self.checks["charger"].set(charger_ok if connected else None, cfg["charger_type"])
-        self.checks["faults"].set(not critical if connected else None,
-                                  f"{len(critical)} present" if critical else "")
-        self.checks["temps"].set(temps_ok if connected else None,
-                                 f"{t_min:.1f} to {t_max:.1f} °C" if t_max is not None else "")
-        self.checks["cells"].set(cells_ok if connected else None,
-                                 f"max {cell_max:.3f} V" if cell_max is not None else "")
+        checks = {  # What each readiness check shows: passed (None for unknown), then the detail beside it
+            "link": (connected, "" if connected else "connect on the start screen"),
+            "charger": (charger_ok if connected else None, cfg["charger_type"]),
+            "faults": (not critical if connected else None, f"{len(critical)} present" if critical else ""),
+            "temps": (temps_ok if connected else None, f"{t_min:.1f} to {t_max:.1f} °C" if t_max is not None else ""),
+            "cells": (cells_ok if connected else None, f"max {cell_max:.3f} V" if cell_max is not None else ""),
+        }
         ready = connected and charger_ok and not critical and temps_ok and cells_ok
-        self.start.setEnabled(bool(ready) and not charging)
-        self.stop.setEnabled(connected and charging)
 
         target = float(cfg["charge_target"])
         floor = float(cfg["cell_uv_fault"])
         if cell_max is not None:
-            self.target_bar.setValue(int(max(0.0, min(1.0, (cell_max - floor) / (target - floor))) * 1000))
-            self.target_text.setText(f"{cell_max:.3f} V of {target:.3f} V target "
-                                     f"({(target - cell_max) * 1000:+.0f} mV to go)")
+            target_value = int(max(0.0, min(1.0, (cell_max - floor) / (target - floor))) * 1000)
+            target_text = f"{cell_max:.3f} V of {target:.3f} V target ({(target - cell_max) * 1000:+.0f} mV to go)"
         else:
-            self.target_bar.setValue(0)
-            self.target_text.setText("No data")
+            target_value, target_text = 0, "No data"
+
+        for view in self.views:
+            for tile in view.tiles:
+                tile.refresh()
+            view.state_badge.set_state(state or "—", state_hex)
+            view.soc.setText(f"{soc:.1f} %" if soc is not None else "—")
+            view.soc.setStyleSheet(f"font-size: {view.soc_px}px; font-weight: 600; color: {soc_hex};")
+            view.soc_bar.setValue(int((soc or 0) * 10))
+            view.eta.setText(eta)
+            for key, (ok, detail) in checks.items():
+                view.checks[key].set(ok, detail)
+            view.start.setEnabled(bool(ready) and not charging)
+            view.stop.setEnabled(connected and charging)
+            view.target_bar.setValue(target_value)
+            view.target_text.setText(target_text)
 
         self.header.summary.setText(
             colored(state, STATE_COLORS["charger.state"].get(state, theme.TEXT)) if state and connected else

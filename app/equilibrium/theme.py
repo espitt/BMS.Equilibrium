@@ -1,72 +1,73 @@
 """Colours, fonts and the application stylesheet.
 
-Colour means state. Everything else stays neutral (white in light mode, dark grey in dark mode),
-with SUFST blue kept for selection and branding. Screens take colours from here and never define their own.
+Colour means state. Everything else stays a neutral grey (light or dark), with SUFST blue kept
+for selection and branding. Screens take colours from here and never define their own.
 """
 
 from collections.abc import Callable
-from pathlib import Path
 
 from PySide6.QtCore import QObject, QSettings, Signal
 from PySide6.QtGui import QColor, QFont, QPalette
 from PySide6.QtWidgets import QApplication
 
+from equilibrium import ASSETS_DIR
+
 # Two palettes with the same names. set_mode() copies one into the module globals below, so
 # code reads theme.TEXT and so on at the moment it draws and always gets the current mode.
 LIGHT = {
-    # Surfaces and text
+    # Surfaces and text. Plain greys with no tint, so the only colour on screen is state.
     "BG": "#ffffff",
-    "SURFACE": "#f5f7fa",  # Rail, side panel, cards
+    "SURFACE": "#f3f3f3",  # Rail, side panel, table headers
     "SURFACE_2": "#ffffff",  # Inputs and buttons
-    "SURFACE_3": "#e8eef6",  # Hover and selection
-    "BORDER": "#d9dfe7",
-    "TEXT": "#14202e",
-    "TEXT_MUTED": "#5b6676",
-    "TEXT_FAINT": "#8d96a3",
+    "SURFACE_3": "#e7e7e7",  # Hover and selection
+    "BORDER": "#d1d1d1",
+    "TEXT": "#1a1a1a",
+    "TEXT_MUTED": "#5c5c5c",
+    "TEXT_FAINT": "#8a8a8a",
     "TOOLTIP_BG": "#ffffff",
     # SUFST blue. Selection and branding only, never pack state.
     "ACCENT": "#00366a",
-    "ACCENT_HOVER": "#1b5c9b",
-    "ACCENT_TINT": "#e6eef7",  # Selected backgrounds
+    "ACCENT_HOVER": "#0d4f8f",
+    "ACCENT_TINT": "#e2eaf3",  # Selected backgrounds
     "ON_ACCENT": "#ffffff",  # Text on an accent background
-    "DANGER_BORDER": "#f0b8bb",
-    "DANGER_HOVER": "#fdecee",
+    "DANGER_BORDER": "#e0a3a7",
+    "DANGER_HOVER": "#fbeced",
     # Pack state, dark enough to read on white
-    "NEUTRAL": "#9aa5b4",  # A healthy value that needs no attention.
+    "NEUTRAL": "#8f959c",  # A healthy value that needs no attention.
     "OK": "#1a7f37",
-    "WARN": "#c88a12",
-    "FAULT": "#d1242f",
-    "STALE": "#c3c9d2",
-    "BALANCE": "#8250df",
-    "CHARGE": "#0f8a9c",
+    "WARN": "#b9770e",
+    "FAULT": "#c62828",
+    "STALE": "#c4c4c4",
+    "BALANCE": "#7a4fc9",
+    "CHARGE": "#0f7f90",
     # Plot series, where colour tells lines apart rather than showing state.
     "SERIES": ["#2f6fdb", "#e8710a", "#12a090", "#c2399b", "#8a6d00", "#6f42c1", "#0b8bb8", "#d6453d"],
 }
 
 DARK = {
-    "BG": "#0e1014",
-    "SURFACE": "#15181e",
-    "SURFACE_2": "#1c2028",
-    "SURFACE_3": "#252a34",
-    "BORDER": "#2a2f3a",
-    "TEXT": "#e6e8ee",
-    "TEXT_MUTED": "#9098a8",
-    "TEXT_FAINT": "#5d6474",
-    "TOOLTIP_BG": "#252a34",
+    "BG": "#1b1b1b",
+    "SURFACE": "#232323",
+    "SURFACE_2": "#2a2a2a",
+    "SURFACE_3": "#353535",
+    "BORDER": "#3e3e3e",
+    "TEXT": "#e4e4e4",
+    "TEXT_MUTED": "#a3a3a3",
+    "TEXT_FAINT": "#707070",
+    "TOOLTIP_BG": "#2a2a2a",
     # SUFST navy is too dark to see on black, so dark mode uses the lighter blue from the logo.
-    "ACCENT": "#3a86d4",
-    "ACCENT_HOVER": "#5a9be0",
-    "ACCENT_TINT": "#14263b",
+    "ACCENT": "#4c94dc",
+    "ACCENT_HOVER": "#6aa8e6",
+    "ACCENT_TINT": "#1f3044",
     "ON_ACCENT": "#ffffff",
-    "DANGER_BORDER": "#5a2a2a",
-    "DANGER_HOVER": "#2a1a1c",
-    "NEUTRAL": "#8b95a7",
+    "DANGER_BORDER": "#6b3333",
+    "DANGER_HOVER": "#332021",
+    "NEUTRAL": "#8b9199",
     "OK": "#3fb950",
-    "WARN": "#e3b341",
-    "FAULT": "#f85149",
-    "STALE": "#4a505c",
-    "BALANCE": "#bc8cff",
-    "CHARGE": "#39c5cf",
+    "WARN": "#e0a93a",
+    "FAULT": "#f2554d",
+    "STALE": "#555555",
+    "BALANCE": "#b592f5",
+    "CHARGE": "#3fbcc7",
     "SERIES": ["#5fa8ff", "#f0883e", "#56d4a8", "#e86fbf", "#d4c35a", "#9d8cff", "#6fd0e8", "#ff8f8f"],
 }
 
@@ -78,6 +79,8 @@ ACCENT = ACCENT_HOVER = ACCENT_TINT = ON_ACCENT = DANGER_BORDER = DANGER_HOVER =
 NEUTRAL = OK = WARN = FAULT = STALE = BALANCE = CHARGE = ""
 SERIES: list[str] = []
 globals().update(LIGHT)
+
+RADIUS = 3  # Corner radius of every box, in pixels. Small, like a native desktop app.
 
 
 class _Signals(QObject):
@@ -99,6 +102,12 @@ def color(hex_code: str, alpha: int = 255) -> QColor:
     c = QColor(hex_code)
     c.setAlpha(alpha)
     return c
+
+
+def rgba(hex_code: str, alpha: int) -> str:
+    """The colour as style sheet text, see-through by alpha (0 clear to 255 solid)."""
+    c = QColor(hex_code)
+    return f"rgba({c.red()},{c.green()},{c.blue()},{alpha})"
 
 
 def mix(a: str | QColor, b: str | QColor, f: float) -> QColor:
@@ -142,22 +151,30 @@ def temperature_color(t: float, ut_fault: float, ut_warn: float, ot_warn: float,
     return QColor(stops[-1][1])
 
 
+def _settings() -> QSettings:
+    return QSettings("SUFST", "Equilibrium")
+
+
 def saved_mode() -> str:
-    value = QSettings("SUFST", "Equilibrium").value("theme", "light")
+    value = _settings().value("theme", "light")
     return value if value in PALETTES else "light"
 
 
-def set_mode(new_mode: str, app: QApplication | None = None) -> None:
-    """Switch between "light" and "dark", remember the choice, and tell everything to redraw."""
+def _use(new_mode: str, app: QApplication | None) -> None:
+    """Make new_mode's palette the current one, restyle the app and run the hooks."""
     global mode
     mode = new_mode if new_mode in PALETTES else "light"
     globals().update(PALETTES[mode])
-    QSettings("SUFST", "Equilibrium").setValue("theme", mode)
-    app = app or QApplication.instance()
     if app is not None:
         _apply_style(app)
     for hook in _hooks:
         hook()
+
+
+def set_mode(new_mode: str, app: QApplication | None = None) -> None:
+    """Switch between "light" and "dark", remember the choice, and tell everything to redraw."""
+    _use(new_mode, app or QApplication.instance())
+    _settings().setValue("theme", mode)
     signals.changed.emit()
 
 
@@ -167,12 +184,7 @@ def toggle() -> None:
 
 def apply(app: QApplication) -> None:
     """Style the app in the mode chosen last time."""
-    global mode
-    mode = saved_mode()
-    globals().update(PALETTES[mode])
-    _apply_style(app)
-    for hook in _hooks:
-        hook()
+    _use(saved_mode(), app)
 
 
 def _apply_style(app: QApplication) -> None:
@@ -207,50 +219,59 @@ def _apply_style(app: QApplication) -> None:
 
 
 def stylesheet() -> str:
+    r = RADIUS
     return f"""
 QToolTip {{
-    background: {TOOLTIP_BG}; color: {TEXT}; border: 1px solid {BORDER}; padding: 6px;
+    background: {TOOLTIP_BG}; color: {TEXT}; border: 1px solid {BORDER}; padding: 4px 6px;
 }}
 
 /* Navigation rail */
 #navRail {{ background: {SURFACE}; border-right: 1px solid {BORDER}; }}
 #navRail QPushButton#navButton {{
-    background: transparent; border: none; border-left: 3px solid transparent;
-    color: {TEXT_MUTED}; text-align: left; padding: 9px 14px 9px 13px; font-size: 13px;
+    background: transparent; border: none; border-radius: 0; border-left: 3px solid transparent;
+    color: {TEXT_MUTED}; text-align: left; padding: 7px 14px 7px 13px;
 }}
 #navRail QPushButton#navButton:hover {{ color: {TEXT}; background: {SURFACE_3}; }}
 #navRail QPushButton#navButton:checked {{
-    color: {ON_ACCENT}; background: {ACCENT}; border-left: 3px solid {ACCENT}; font-weight: 600;
+    color: {TEXT}; background: {SURFACE_3}; border-left: 3px solid {ACCENT}; font-weight: 600;
 }}
-#navRail QPushButton#navButton:checked:hover {{ background: {ACCENT_HOVER}; border-left-color: {ACCENT_HOVER}; }}
-#logoToggle {{ border: none; border-radius: 6px; padding: 3px; background: transparent; }}
+#logoToggle {{ border: none; border-radius: {r}px; padding: 3px; background: transparent; }}
 #logoToggle:hover {{ background: {SURFACE_3}; }}
 #logoToggle:pressed {{ background: {BORDER}; }}
-#brand {{ color: {ACCENT}; font-size: 15px; font-weight: 600; }}
+#brand {{ color: {TEXT}; font-size: 14px; font-weight: 600; }}
 
 /* Per-screen configuration panel */
 #sidePanel {{ background: {SURFACE}; border-right: 1px solid {BORDER}; }}
 #sidePanel QScrollArea, #sidePanel QScrollArea > QWidget > QWidget {{ background: transparent; border: none; }}
-#panelTitle {{ font-size: 15px; font-weight: 600; color: {TEXT}; }}
-#sectionLabel {{
-    color: {TEXT_FAINT}; font-size: 11px; font-weight: 600; letter-spacing: 1px;
-    padding-top: 10px;
-}}
+#sectionLabel {{ color: {TEXT}; font-weight: 600; }}
+QFrame#rule {{ background: {BORDER}; border: none; }}
 #muted {{ color: {TEXT_MUTED}; }}
 #faint {{ color: {TEXT_FAINT}; }}
 
 /* Content */
-#screenTitle {{ font-size: 18px; font-weight: 600; color: {TEXT}; }}
+#startPage {{ background: {SURFACE}; }}
+#startTitle {{ font-size: 20px; font-weight: 600; color: {TEXT}; }}
+#screenTitle {{ font-size: 16px; font-weight: 600; color: {TEXT}; }}
 #screenSummary {{ color: {TEXT_MUTED}; }}
-QFrame#card {{ background: {SURFACE}; border: 1px solid {BORDER}; border-radius: 8px; }}
-#cardTitle {{ color: {TEXT_MUTED}; font-size: 12px; font-weight: 600; }}
-#tileCaption {{ color: {TEXT_MUTED}; font-size: 12px; }}
+QFrame#card {{ background: {BG}; border: 1px solid {BORDER}; border-radius: {r}px; }}
+#cardTitle {{ color: {TEXT}; font-weight: 600; }}
+
+/* Live values, side by side in one box and split by hairlines */
+QFrame#readouts {{ background: {BG}; border: 1px solid {BORDER}; border-radius: {r}px; }}
+QFrame#readout {{
+    background: transparent; border: none;
+    border-right: 1px solid {BORDER}; border-bottom: 1px solid {BORDER};
+}}
+QFrame#readout[lastColumn="true"] {{ border-right: none; }}
+QFrame#readout[lastRow="true"] {{ border-bottom: none; }}
+#tileCaption {{ color: {TEXT_MUTED}; }}
+#tileValue {{ font-size: 20px; font-weight: 600; }}
 #tileSub {{ color: {TEXT_FAINT}; font-size: 11px; }}
 
 /* Controls */
 QPushButton {{
-    background: {SURFACE_2}; color: {TEXT}; border: 1px solid {BORDER}; border-radius: 6px;
-    padding: 6px 12px;
+    background: {SURFACE_2}; color: {TEXT}; border: 1px solid {BORDER}; border-radius: {r}px;
+    padding: 5px 12px;
 }}
 QPushButton:hover {{ background: {SURFACE_3}; }}
 QPushButton:pressed {{ background: {BORDER}; }}
@@ -258,67 +279,93 @@ QPushButton:disabled {{ color: {TEXT_FAINT}; background: {SURFACE}; }}
 QPushButton:checked {{ background: {ACCENT_TINT}; border-color: {ACCENT}; color: {ACCENT}; }}
 QPushButton#primary {{ background: {ACCENT}; border-color: {ACCENT}; color: {ON_ACCENT}; font-weight: 600; }}
 QPushButton#primary:hover {{ background: {ACCENT_HOVER}; border-color: {ACCENT_HOVER}; }}
-QPushButton#primary:disabled {{ background: {SURFACE_2}; border-color: {BORDER}; color: {TEXT_FAINT}; }}
+QPushButton#primary:disabled {{ background: {SURFACE}; border-color: {BORDER}; color: {TEXT_FAINT}; }}
 QPushButton#danger {{ color: {FAULT}; border-color: {DANGER_BORDER}; }}
 QPushButton#danger:hover {{ background: {DANGER_HOVER}; }}
-QPushButton#segment {{ border-radius: 0; padding: 5px 10px; }}
+QPushButton#danger:disabled {{ color: {TEXT_FAINT}; border-color: {BORDER}; }}
+QPushButton#segmentPick {{ padding: 5px 4px; }}
 
-QLineEdit, QSpinBox, QDoubleSpinBox, QComboBox {{
-    background: {SURFACE_2}; border: 1px solid {BORDER}; border-radius: 5px; padding: 4px 6px;
-    color: {TEXT}; selection-background-color: {ACCENT};
+/* Segmented control: buttons joined into one box, the chosen one filled */
+QPushButton#segment {{ border-radius: 0; border-left: none; padding: 4px 10px; }}
+QPushButton#segment[edge="first"] {{
+    border-left: 1px solid {BORDER}; border-top-left-radius: {r}px; border-bottom-left-radius: {r}px;
 }}
-QLineEdit:focus, QSpinBox:focus, QDoubleSpinBox:focus, QComboBox:focus {{ border-color: {ACCENT}; }}
-QComboBox QAbstractItemView {{ background: {SURFACE_2}; border: 1px solid {BORDER}; selection-background-color: {ACCENT_TINT}; selection-color: {ACCENT}; }}
+QPushButton#segment[edge="last"] {{ border-top-right-radius: {r}px; border-bottom-right-radius: {r}px; }}
+QPushButton#segment:checked {{ background: {ACCENT}; border-color: {ACCENT}; color: {ON_ACCENT}; }}
+
+QLineEdit, QAbstractSpinBox, QComboBox {{
+    background: {SURFACE_2}; border: 1px solid {BORDER}; border-radius: {r}px; padding: 4px 6px;
+    color: {TEXT}; selection-background-color: {ACCENT}; selection-color: {ON_ACCENT};
+}}
+QLineEdit:focus, QAbstractSpinBox:focus, QComboBox:focus {{ border-color: {ACCENT}; }}
+QLineEdit:disabled, QAbstractSpinBox:disabled, QComboBox:disabled {{ background: {SURFACE}; color: {TEXT_FAINT}; }}
+QComboBox QAbstractItemView {{
+    background: {SURFACE_2}; border: 1px solid {BORDER}; outline: none;
+    selection-background-color: {ACCENT_TINT}; selection-color: {TEXT};
+}}
 QCheckBox {{ spacing: 8px; }}
 
 QTableWidget, QListWidget, QPlainTextEdit, QTextEdit {{
-    background: {SURFACE}; border: 1px solid {BORDER}; border-radius: 6px; gridline-color: {BORDER};
+    background: {BG}; border: 1px solid {BORDER}; border-radius: {r}px; gridline-color: {BORDER};
+    outline: none;
 }}
-QTableWidget::item, QListWidget::item {{ padding: 4px; }}
+QTableWidget::item {{ padding: 2px 6px; }}
+QListWidget::item {{ padding: 5px 8px; }}
 QTableWidget::item:selected, QListWidget::item:selected {{ background: {ACCENT_TINT}; color: {TEXT}; }}
+QHeaderView {{ background: {SURFACE}; }}
 QHeaderView::section {{
     background: {SURFACE}; color: {TEXT_MUTED}; border: none; border-bottom: 1px solid {BORDER};
-    padding: 6px; font-weight: 600;
+    padding: 5px 6px; font-weight: 600;
 }}
 QTableCornerButton::section {{ background: {SURFACE}; border: none; }}
 
 QTabWidget::pane {{ border: none; }}
 QTabBar::tab {{
-    background: transparent; color: {TEXT_MUTED}; padding: 7px 14px; border: none;
+    background: transparent; color: {TEXT_MUTED}; padding: 6px 2px; margin-right: 20px; border: none;
     border-bottom: 2px solid transparent;
 }}
-QTabBar::tab:selected {{ color: {ACCENT}; border-bottom: 2px solid {ACCENT}; }}
+QTabBar::tab:selected {{ color: {TEXT}; border-bottom: 2px solid {ACCENT}; }}
 QTabBar::tab:hover {{ color: {TEXT}; }}
 
 QSplitter::handle {{ background: {BG}; }}
-QProgressBar {{ background: {BORDER}; border: none; border-radius: 4px; height: 8px; text-align: center; }}
-QProgressBar::chunk {{ border-radius: 4px; background: {NEUTRAL}; }}
+QProgressBar {{ background: {SURFACE_3}; border: none; border-radius: 2px; height: 6px; text-align: center; }}
+QProgressBar::chunk {{ border-radius: 2px; background: {NEUTRAL}; }}
 
 QScrollBar:vertical {{ background: transparent; width: 10px; margin: 0; }}
 QScrollBar:horizontal {{ background: transparent; height: 10px; margin: 0; }}
-QScrollBar::handle {{ background: {BORDER}; border-radius: 4px; min-height: 24px; min-width: 24px; }}
+QScrollBar::handle {{ background: {BORDER}; border-radius: 3px; min-height: 24px; min-width: 24px; margin: 2px; }}
 QScrollBar::handle:hover {{ background: {TEXT_FAINT}; }}
 QScrollBar::add-line, QScrollBar::sub-line {{ width: 0; height: 0; }}
 QScrollBar::add-page, QScrollBar::sub-page {{ background: transparent; }}
 
 QStatusBar {{ background: {SURFACE}; color: {TEXT_MUTED}; border-top: 1px solid {BORDER}; }}
-QMenuBar {{ background: {SURFACE}; color: {TEXT_MUTED}; }}
-QMenuBar::item:selected {{ background: {SURFACE_3}; color: {TEXT}; }}
-QMenu {{ background: {SURFACE_2}; border: 1px solid {BORDER}; }}
-QMenu::item:selected {{ background: {SURFACE_3}; }}
+QMenuBar {{ background: {SURFACE}; color: {TEXT}; border-bottom: 1px solid {BORDER}; }}
+QMenuBar::item {{ background: transparent; padding: 4px 10px; }}
+QMenuBar::item:selected {{ background: {SURFACE_3}; }}
+QMenu {{ background: {SURFACE_2}; border: 1px solid {BORDER}; padding: 3px 0; }}
+QMenu::item {{ padding: 5px 24px; }}
+QMenu::item:selected {{ background: {ACCENT_TINT}; color: {TEXT}; }}
+QMenu::separator {{ height: 1px; background: {BORDER}; margin: 3px 0; }}
 """
 
 
 def _spin_buttons() -> str:
     """Spin box arrows. Styling a spin box's frame hides Fusion's own arrows, so draw them here."""
-    assets = (Path(__file__).resolve().parent / "assets").as_posix()
+    assets = ASSETS_DIR.as_posix()
+    r = RADIUS - 1
     return f"""
+QAbstractSpinBox {{ padding-right: 20px; }}
+
 QAbstractSpinBox::up-button, QAbstractSpinBox::down-button {{
-    subcontrol-origin: border; width: 18px; border: none; border-left: 1px solid {BORDER}; background: {SURFACE_3};
+    subcontrol-origin: border; width: 18px; border: none; border-left: 1px solid {BORDER}; background: {SURFACE};
 }}
-QAbstractSpinBox::up-button {{ subcontrol-position: top right; border-top-right-radius: 5px; }}
-QAbstractSpinBox::down-button {{ subcontrol-position: bottom right; border-bottom-right-radius: 5px; }}
-QAbstractSpinBox::up-button:hover, QAbstractSpinBox::down-button:hover {{ background: {BORDER}; }}
+QAbstractSpinBox::up-button {{
+    subcontrol-position: top right; border-top-right-radius: {r}px; margin: 1px 1px 0 0;
+}}
+QAbstractSpinBox::down-button {{
+    subcontrol-position: bottom right; border-bottom-right-radius: {r}px; margin: 0 1px 1px 0;
+}}
+QAbstractSpinBox::up-button:hover, QAbstractSpinBox::down-button:hover {{ background: {SURFACE_3}; }}
 QAbstractSpinBox::up-arrow {{ image: url({assets}/arrow_up.svg); width: 8px; height: 5px; }}
 QAbstractSpinBox::down-arrow {{ image: url({assets}/arrow_down.svg); width: 8px; height: 5px; }}
 QComboBox::drop-down {{ border: none; width: 20px; }}

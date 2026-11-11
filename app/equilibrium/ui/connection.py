@@ -2,13 +2,20 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-
 from PySide6.QtCore import Qt, Signal
-from PySide6.QtGui import QPixmap
-from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QListWidget, QListWidgetItem, QMessageBox, QVBoxLayout, QWidget
+from PySide6.QtGui import QPixmap, QShowEvent
+from PySide6.QtWidgets import (
+    QFrame,
+    QHBoxLayout,
+    QLabel,
+    QListWidget,
+    QListWidgetItem,
+    QMessageBox,
+    QVBoxLayout,
+    QWidget,
+)
 
-from equilibrium import __version__, theme
+from equilibrium import ICON_PATH, __version__, theme
 from equilibrium.ui.widgets import button, label, section_label
 
 SIMULATOR = "__simulator__"
@@ -34,43 +41,47 @@ class ConnectionPage(QWidget):
 
     def __init__(self) -> None:
         super().__init__()
+        self.setObjectName("startPage")
+        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground)  # So the style sheet's background is drawn
         outer = QVBoxLayout(self)
         outer.addStretch(1)
         row = QHBoxLayout()
         row.addStretch(1)
         card = QFrame()
         card.setObjectName("card")
-        card.setFixedWidth(440)
+        card.setFixedWidth(420)
         row.addWidget(card)
         row.addStretch(1)
         outer.addLayout(row)
         outer.addStretch(2)
 
         box = QVBoxLayout(card)
-        box.setContentsMargins(28, 26, 28, 26)
-        box.setSpacing(10)
+        box.setContentsMargins(24, 22, 24, 24)
+        box.setSpacing(8)
 
         brand = QHBoxLayout()
+        brand.setSpacing(12)
         icon = QLabel()
-        pixmap = QPixmap(str(Path(__file__).resolve().parent.parent / "assets" / "icon.png"))
+        pixmap = QPixmap(str(ICON_PATH))
         if not pixmap.isNull():
-            icon.setPixmap(pixmap.scaled(44, 44, Qt.AspectRatioMode.KeepAspectRatio,
-                                         Qt.TransformationMode.SmoothTransformation))
+            ratio = self.devicePixelRatioF()
+            pixmap = pixmap.scaled(round(40 * ratio), round(40 * ratio), Qt.AspectRatioMode.KeepAspectRatio,
+                                   Qt.TransformationMode.SmoothTransformation)
+            pixmap.setDevicePixelRatio(ratio)
+            icon.setPixmap(pixmap)
         brand.addWidget(icon)
         titles = QVBoxLayout()
         titles.setSpacing(0)
-        title = label("Equilibrium")
-        title.setStyleSheet("font-size: 22px; font-weight: 600;")
-        titles.addWidget(title)
-        titles.addWidget(label(f"Battery management · {__version__}", "faint"))
+        titles.addWidget(label("Equilibrium", "startTitle"))
+        titles.addWidget(label(f"Battery management system tool, version {__version__}", "faint"))
         brand.addLayout(titles)
         brand.addStretch(1)
         box.addLayout(brand)
-        box.addSpacing(8)
+        box.addSpacing(6)
 
-        box.addWidget(section_label("Connect to a BMS over USB"))
+        box.addWidget(section_label("Connect to a BMS"))
         self.ports = QListWidget()
-        self.ports.setMinimumHeight(150)
+        self.ports.setMinimumHeight(170)
         self.ports.itemDoubleClicked.connect(lambda _item: self._connect())
         self.ports.itemSelectionChanged.connect(self._selection_changed)
         box.addWidget(self.ports)
@@ -78,12 +89,12 @@ class ConnectionPage(QWidget):
         actions.addWidget(button("Refresh", self.refresh))
         actions.addStretch(1)
         self.connect_button = button("Connect", self._connect, "primary")
-        self.connect_button.setMinimumWidth(120)
+        self.connect_button.setMinimumWidth(96)
         actions.addWidget(self.connect_button)
         box.addLayout(actions)
 
-        box.addSpacing(10)
-        box.addWidget(section_label("Or work offline"))
+        box.addSpacing(6)
+        box.addWidget(section_label("Work offline"))
         offline = QHBoxLayout()
         offline.addWidget(button("Open saved configuration…", self.openConfig.emit))
         offline.addWidget(button("New blank configuration", self.newConfig.emit))
@@ -123,6 +134,6 @@ class ConnectionPage(QWidget):
                                     f"Connecting to {port} needs the BMS serial protocol, which is not defined "
                                     "yet. Use the simulated BMS for now.")
 
-    def showEvent(self, event) -> None:
+    def showEvent(self, event: QShowEvent) -> None:
         super().showEvent(event)
         self.refresh()

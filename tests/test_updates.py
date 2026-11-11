@@ -570,6 +570,51 @@ class SplashTests(unittest.TestCase):
         self.assertEqual(round(size.height()), splash.PHOTO_HEIGHT)
         self.assertNotEqual(size, icon_size)
 
+    def test_cells_charge_from_empty_to_full(self):
+        from PySide6.QtGui import QColor
+
+        splash, startup = self.make()
+        scale = splash.ICON_SIZE / splash.ICON_ART_SIZE * startup.screen.pixmap().devicePixelRatio()
+
+        def filled(pixmap):
+            # Sample each cell a quarter and three quarters of the way along its fill.
+            image, cells = pixmap.toImage(), []
+            for x, y in splash.CELL_FILLS:
+                y += splash.CELL_HEIGHT / 2
+                x -= splash.CELL_HEIGHT / 2 * splash.CELL_SLANT
+                for share in (0.25, 0.75):
+                    point = round((x + share * splash.CELL_WIDTH) * scale), round(y * scale)
+                    cells.append(image.pixelColor(*point) != QColor(splash.ICON_BACKGROUND))
+            return cells
+
+        self.assertEqual(filled(startup.screen.pixmap()), [False] * 6)  # Starts empty.
+        self.assertEqual(filled(splash._charged(startup._icon, 0.5)), [True, False] * 3)
+        self.assertEqual(filled(splash._charged(startup._icon, 1.0)), [True] * 6)
+        with mock.patch.object(splash, "MIN_DURATION_MS", 100), mock.patch.object(
+            splash, "MAX_DURATION_MS", 5000
+        ):
+            startup.show()
+            self.wait(250)  # Not ready, so the splash stays up, fully charged.
+        self.assertTrue(startup.screen.isVisible())
+        self.assertEqual(filled(startup.screen.pixmap()), [True] * 6)
+        self.assertFalse(startup._frames.isActive())
+        startup.ready()
+
+    def test_custom_image_does_not_charge(self):
+        from equilibrium import personal
+
+        splash, _ = self.make()
+        with mock.patch.object(personal, "asset", return_value=personal.ASSETS_DIR / "adam.jpg"):
+            _, startup = self.make()
+        with mock.patch.object(splash, "MIN_DURATION_MS", 20), mock.patch.object(
+            splash, "MAX_DURATION_MS", 5000
+        ):
+            startup.show()
+            self.assertFalse(startup._frames.isActive())
+            startup.ready()
+            self.wait(80)
+        self.assertTrue(self.window.isVisible())
+
     def test_gives_up_waiting_at_the_maximum(self):
         splash, startup = self.make()
         with mock.patch.object(splash, "MIN_DURATION_MS", 20), mock.patch.object(

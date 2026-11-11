@@ -46,22 +46,33 @@ def temp_level(t: float, cfg: Config) -> str:
     return "normal"
 
 
+def level_color(level: str, normal: str | None = None) -> str:
+    """The colour for a "normal", "warn" or "fault" value. `normal` defaults to the current text colour."""
+    if level == "normal":
+        return theme.TEXT if normal is None else normal
+    return LEVEL_COLORS[level]
+
+
 def value_color(cid: str, value: float | None, cfg: Config, labels: tuple[str, ...] = (),
-                normal: str = theme.TEXT, stale: bool = False) -> str:
-    """The colour to draw a channel's value in. `normal` is used when nothing needs attention."""
+                normal: str | None = None, stale: bool = False) -> str:
+    """The colour to draw a channel's value in.
+
+    `normal` is used when nothing needs attention. It defaults to the text colour of the mode in
+    use when called, not when this module was imported.
+    """
     if stale or value is None:
         return theme.TEXT_FAINT if value is None else theme.STALE
     if cid in STATE_COLORS and labels:
         index = int(round(value))
         name = labels[index] if 0 <= index < len(labels) else ""
-        return STATE_COLORS[cid].get(name, normal)
-    if cid.startswith("cell.") and cid not in ("cell.delta",):
+        return STATE_COLORS[cid].get(name, level_color("normal", normal))
+    if cid == "cell.delta":
+        threshold = float(cfg["balance_threshold_mv"])
+        level = "warn" if value > max(50.0, threshold * 5) else "normal"
+    elif cid.startswith("cell."):
         level = cell_level(value, cfg)
     elif cid.startswith("temp."):
         level = temp_level(value, cfg)
-    elif cid == "cell.delta":
-        threshold = float(cfg["balance_threshold_mv"])
-        level = "warn" if value > max(50.0, threshold * 5) else "normal"
     else:
         level = "normal"
-    return normal if level == "normal" else LEVEL_COLORS[level]
+    return level_color(level, normal)

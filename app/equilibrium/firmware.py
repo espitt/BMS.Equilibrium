@@ -128,7 +128,7 @@ def list_releases(repo: Optional[str] = None) -> list[FirmwareRelease]:
             entries = json.load(response)
     except urllib.error.HTTPError as error:
         raise _http_error(error, repo) from error
-    except (urllib.error.URLError, http.client.HTTPException, OSError) as error:
+    except (http.client.HTTPException, OSError) as error:  # OSError covers URLError and timeouts.
         raise core.InstallError("Could not reach GitHub. Check the internet connection.") from error
     except ValueError as error:
         raise core.InstallError("GitHub's list of releases could not be read.") from error

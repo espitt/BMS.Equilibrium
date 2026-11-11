@@ -21,11 +21,12 @@ from PySide6.QtGui import (
 from PySide6.QtWidgets import QCheckBox, QGridLayout, QHBoxLayout, QPushButton, QSizePolicy, QToolTip, QWidget
 
 from equilibrium import theme
+from equilibrium.bms.config import Config
 from equilibrium.bms.layout import Thermistor, temp_id
 from equilibrium.ui.context import AppContext
 from equilibrium.ui.screens.base import Screen
-from equilibrium.ui.states import LEVEL_COLORS, temp_level
-from equilibrium.ui.widgets import Segmented, SettingsForm, button, colored, label, screen_layout, write_button
+from equilibrium.ui.states import LEVEL_COLORS, level_color, temp_level
+from equilibrium.ui.widgets import Segmented, SettingsForm, button, colored, screen_layout, write_button
 
 DEFAULT_YAW = -0.6
 DEFAULT_PITCH = 0.55
@@ -56,7 +57,8 @@ class Camera(QObject):
         self.changed.emit()
 
 
-def limits(cfg) -> tuple[float, float, float, float]:
+def limits(cfg: Config) -> tuple[float, float, float, float]:
+    """The temperature limits, coldest first: undertemperature fault and warning, then overtemperature."""
     return (float(cfg["temp_ut_fault"]), float(cfg["temp_ut_warn"]),
             float(cfg["temp_ot_warn"]), float(cfg["temp_ot_fault"]))
 
@@ -174,19 +176,15 @@ class SegmentView(QWidget):
         p.drawText(QRectF(8, 4, self.width() - 16, 18), Qt.AlignmentFlag.AlignLeft, title)
         if temps:
             hi = max(temps)
-            level = temp_level(hi, self.ctx.config)
-            p.setPen(theme.color(theme.TEXT if level == "normal" else LEVEL_COLORS[level]))
+            p.setPen(theme.color(level_color(temp_level(hi, self.ctx.config))))
             p.drawText(QRectF(8, 4, self.width() - 16, 18), Qt.AlignmentFlag.AlignRight, f"max {hi:.1f} °C")
         p.end()
 
     def _hit(self, pos: QPointF) -> Thermistor | None:
-        best = None
         for t, point, _depth in reversed(self.projected):  # Nearest first
-            d = math.hypot(point.x() - pos.x(), point.y() - pos.y())
-            if d <= 14:
-                best = t
-                break
-        return best
+            if math.hypot(point.x() - pos.x(), point.y() - pos.y()) <= 14:
+                return t
+        return None
 
     def mousePressEvent(self, event: QMouseEvent) -> None:
         self._press = event.position()
@@ -251,7 +249,7 @@ class TempLegend(QWidget):
             gradient.setColorAt(i / 40, theme.temperature_color(t, *lims))
         p.setPen(Qt.PenStyle.NoPen)
         p.setBrush(QBrush(gradient))
-        p.drawRoundedRect(bar, 4, 4)
+        p.drawRoundedRect(bar, 2, 2)
         small = QFont(self.font())
         small.setPointSizeF(max(7.0, small.pointSizeF() - 2))
         p.setFont(small)
@@ -276,16 +274,16 @@ class ThermalsScreen(Screen):
 
         # Segment picker, each button showing that segment's hottest reading.
         picker = QHBoxLayout()
-        picker.setSpacing(6)
+        picker.setSpacing(4)
         self.segment_buttons: list[QPushButton] = []
         for s in range(1, ctx.layout.segments + 1):
             b = QPushButton(f"Segment {s}")
+            b.setObjectName("segmentPick")  # Less padding than other buttons, so seven fit their text
             b.setCheckable(True)
-            b.setCursor(Qt.CursorShape.PointingHandCursor)
             b.clicked.connect(lambda _checked=False, seg=s: self._pick(seg))
-            picker.addWidget(b)
+            b.setMinimumWidth(1)  # Share the row equally; refresh() shortens the text to fit.
+            picker.addWidget(b, 1)
             self.segment_buttons.append(b)
-        picker.addStretch(1)
         box.addLayout(picker)
 
         self.single = SegmentView(ctx, self.camera, 1)
@@ -359,7 +357,11 @@ class ThermalsScreen(Screen):
                 continue
             hi = max(temps)
             level = temp_level(hi, cfg)
-            b.setText(f"Segment {s}  ·  {hi:.0f} °C")
+            # The segment's name in full where there is room for it, otherwise just its number.
+            reading = f"{hi:.0f} °C"
+            full = f"Segment {s}  {reading}"
+            fits = b.fontMetrics().horizontalAdvance(full) + 12 <= b.width()
+            b.setText(full if fits else f"{s}  {reading}")
             hex_code = theme.STALE if stale else (None if level == "normal" else LEVEL_COLORS[level])
             b.setStyleSheet(f"QPushButton {{ color: {hex_code}; }}" if hex_code else "")
 
@@ -370,9 +372,8 @@ class ThermalsScreen(Screen):
         tmax, thmax = max(readings, key=lambda r: r[0])
         tmin, thmin = min(readings, key=lambda r: r[0])
         avg = sum(r[0] for r in readings) / len(readings)
-        hot_hex = theme.TEXT if temp_level(tmax, cfg) == "normal" else LEVEL_COLORS[temp_level(tmax, cfg)]
         self.header.summary.setText(
-            f"Hottest {colored(f'{tmax:.1f} °C', hot_hex)} ({thmax.label}) · "
+            f"Hottest {colored(f'{tmax:.1f} °C', level_color(temp_level(tmax, cfg)))} ({thmax.label}) · "
             f"Coldest {colored(f'{tmin:.1f} °C', theme.TEXT)} ({thmin.label}) · "
             f"Average {colored(f'{avg:.1f} °C', theme.TEXT)}"
         )

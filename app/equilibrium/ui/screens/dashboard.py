@@ -3,29 +3,60 @@
 from __future__ import annotations
 
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QGridLayout, QHBoxLayout, QProgressBar, QScrollArea, QSizePolicy, QVBoxLayout, QWidget
+from PySide6.QtWidgets import (
+    QAbstractItemView,
+    QHeaderView,
+    QProgressBar,
+    QScrollArea,
+    QTableWidget,
+    QTableWidgetItem,
+    QVBoxLayout,
+    QWidget,
+)
 
 from equilibrium import theme
 from equilibrium.bms.layout import cell_id, temp_id
+from equilibrium.bms.store import worst_severity
 from equilibrium.ui.context import AppContext
 from equilibrium.ui.screens.base import Screen
-from equilibrium.ui.states import SEVERITY_COLORS, cell_level, temp_level
-from equilibrium.ui.widgets import Card, Tile, colored, label, screen_layout, section_label
+from equilibrium.ui.states import SEVERITY_COLORS, cell_level, level_color, temp_level
+from equilibrium.ui.widgets import Readout, ReadoutGrid, Tile, device_html, label, screen_layout, section_label
 
-def level_hex(level: str) -> str:
-    return {"normal": theme.TEXT, "warn": theme.WARN, "fault": theme.FAULT}[level]
+SEGMENT_COLUMNS = ["Segment", "Lowest cell", "Highest cell", "Cell delta", "Highest temperature"]
+ROW_HEIGHT = 26
 
 
-class SegmentCard(Card):
-    def __init__(self, segment: int) -> None:
-        super().__init__(f"Segment {segment}")
-        self.segment = segment
-        self.voltage = label("—")
-        self.voltage.setTextFormat(Qt.TextFormat.RichText)
-        self.temp = label("—")
-        self.temp.setTextFormat(Qt.TextFormat.RichText)
-        self.box.addWidget(self.voltage)
-        self.box.addWidget(self.temp)
+class SegmentTable(QTableWidget):
+    """One row per segment: its cell range and hottest reading. For reading only, so nothing selects."""
+
+    def __init__(self, segments: int) -> None:
+        super().__init__(segments, len(SEGMENT_COLUMNS))
+        self.setHorizontalHeaderLabels(SEGMENT_COLUMNS)
+        self.verticalHeader().hide()
+        self.verticalHeader().setDefaultSectionSize(ROW_HEIGHT)
+        self.setShowGrid(False)
+        self.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+        self.setSelectionMode(QAbstractItemView.SelectionMode.NoSelection)
+        self.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        header = self.horizontalHeader()
+        header.setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+        header.setDefaultAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+        header.setSectionsClickable(False)
+        header.setFixedHeight(ROW_HEIGHT + 2)
+        self.setFixedHeight(header.height() + segments * ROW_HEIGHT + 2)  # Every row, with no scrolling
+        for row in range(segments):
+            for column in range(len(SEGMENT_COLUMNS)):
+                self.setItem(row, column, QTableWidgetItem())
+            self.set_row(row, [(f"Segment {row + 1}", theme.TEXT)])
+
+    def set_row(self, row: int, cells: list[tuple[str, str]]) -> None:
+        """Fill a row from the left with (text, colour) pairs."""
+        for column, (text, hex_code) in enumerate(cells):
+            item = self.item(row, column)
+            item.setText(text)
+            item.setForeground(theme.color(hex_code))
 
 
 class DashboardScreen(Screen):
@@ -46,60 +77,43 @@ class DashboardScreen(Screen):
 
         self.tiles: list[Tile] = []
 
-        def row(title: str, specs: list[tuple[str, str | None, bool]]) -> list[Tile]:
+        def row(title: str, specs: list[tuple[str, str, bool]], extra: Readout | None = None) -> list[Tile]:
+            """A headed row of live values. `extra` is a readout of something that is not a channel."""
             box.addWidget(section_label(title))
-            grid = QHBoxLayout()
-            grid.setSpacing(10)
-            made = []
-            for cid, caption, badge in specs:
-                tile = Tile(ctx, cid, caption, badge)
-                grid.addWidget(tile)
-                made.append(tile)
-            box.addLayout(grid)
-            self.last_row = grid
+            made = [Tile(ctx, cid, caption, badge) for cid, caption, badge in specs]
+            box.addWidget(ReadoutGrid(made + ([extra] if extra else [])))
             self.tiles.extend(made)
             return made
 
+        self.faults = Readout("Present faults")
         row("State", [("ams.state", "AMS state", True), ("precharge.state", "Precharge", True),
-                      ("charger.state", "Charger", True)])
-        self.faults_card = Card()
-        self.faults_card.box.setContentsMargins(14, 10, 14, 12)
-        self.faults_card.box.setSpacing(2)
-        self.faults_card.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
-        self.faults_card.box.addWidget(label("Present faults", "tileCaption"))
-        self.faults_label = label("—")
-        self.faults_label.setStyleSheet("font-size: 24px; font-weight: 600;")
-        self.faults_card.box.addWidget(self.faults_label)
-        self.faults_card.box.addWidget(label(" ", "tileSub"))
-        self.last_row.addWidget(self.faults_card)
+                      ("charger.state", "Charger", True)], self.faults)
 
         pack = row("Pack", [("pack.voltage", "Pack voltage", False), ("pack.current", "Current", False),
                             ("pack.power", "Power", False), ("pack.soc", "State of charge", False),
                             ("ts.voltage", "TS voltage", False)])
-        self.soc_tile = pack[3]
+        # The state of charge bar takes the place of the line under the value.
+        soc_tile = pack[3]
         self.soc_bar = QProgressBar()
         self.soc_bar.setRange(0, 1000)
         self.soc_bar.setTextVisible(False)
-        self.soc_bar.setFixedHeight(6)
-        self.soc_tile.layout().addWidget(self.soc_bar)
+        self.soc_bar.setFixedHeight(4)
+        soc_tile.sub.hide()
+        soc_tile.layout().addSpacing(5)
+        soc_tile.layout().addWidget(self.soc_bar)
+        soc_tile.layout().addSpacing(5)
 
-        cells = row("Cells", [("cell.max", "Max cell", False), ("cell.min", "Min cell", False),
+        cells = row("Cells", [("cell.max", "Highest cell", False), ("cell.min", "Lowest cell", False),
                               ("cell.avg", "Average cell", False), ("cell.delta", "Cell delta", False)])
         self.cell_max_tile, self.cell_min_tile = cells[0], cells[1]
-        temps = row("Temperatures", [("temp.max", "Max temperature", False), ("temp.min", "Min temperature", False),
+        temps = row("Temperatures", [("temp.max", "Highest temperature", False),
+                                     ("temp.min", "Lowest temperature", False),
                                      ("temp.avg", "Average temperature", False)])
         self.temp_max_tile, self.temp_min_tile = temps[0], temps[1]
 
         box.addWidget(section_label("Segments"))
-        seg_grid = QGridLayout()
-        seg_grid.setSpacing(10)
-        self.segment_cards = []
-        columns = 4 if ctx.layout.segments > 4 else ctx.layout.segments
-        for i in range(ctx.layout.segments):
-            card = SegmentCard(i + 1)
-            seg_grid.addWidget(card, i // columns, i % columns)
-            self.segment_cards.append(card)
-        box.addLayout(seg_grid)
+        self.segments = SegmentTable(ctx.layout.segments)
+        box.addWidget(self.segments)
         box.addStretch(1)
 
         self.panel.section("Connection")
@@ -107,8 +121,7 @@ class DashboardScreen(Screen):
         self.panel.section("Device")
         self.device = self.panel.add(label("", "muted", wrap=True))
         self.device.setTextFormat(Qt.TextFormat.RichText)
-        self.panel.note("The dashboard has no settings. Hover any value to see where it comes from; "
-                        "click it to add it to Plots.")
+        self.panel.note("Hover a value to see where it comes from. Click it to add it to Plots.")
         self.panel.finish()
         ctx.data.faultsChanged.connect(self._on_data)
         ctx.data.connectionChanged.connect(self._on_data)
@@ -127,45 +140,44 @@ class DashboardScreen(Screen):
         cells = [(data.values[cell_id(n)], n) for n in range(1, layout.cell_count + 1) if cell_id(n) in data.values]
         temps = [(data.values[temp_id(t.number)], t) for t in layout.thermistors if temp_id(t.number) in data.values]
         if cells:
-            vmax, nmax = max(cells)
-            vmin, nmin = min(cells)
-            self.cell_max_tile.set_sub(f"Cell {nmax} · segment {layout.cell_position(nmax)[0]}")
-            self.cell_min_tile.set_sub(f"Cell {nmin} · segment {layout.cell_position(nmin)[0]}")
+            _, nmax = max(cells)
+            _, nmin = min(cells)
+            self.cell_max_tile.set_sub(f"Cell {nmax}, segment {layout.cell_position(nmax)[0]}")
+            self.cell_min_tile.set_sub(f"Cell {nmin}, segment {layout.cell_position(nmin)[0]}")
         if temps:
-            tmax, thmax = max(temps, key=lambda p: p[0])
-            tmin, thmin = min(temps, key=lambda p: p[0])
-            self.temp_max_tile.set_sub(f"{thmax.label} · segment {thmax.segment}")
-            self.temp_min_tile.set_sub(f"{thmin.label} · segment {thmin.segment}")
+            _, thmax = max(temps, key=lambda p: p[0])
+            _, thmin = min(temps, key=lambda p: p[0])
+            self.temp_max_tile.set_sub(f"{thmax.label}, segment {thmax.segment}")
+            self.temp_min_tile.set_sub(f"{thmin.label}, segment {thmin.segment}")
 
         present = data.present_faults()
         if not data.connected:
-            self.faults_label.setText("—")
-            self.faults_label.setStyleSheet(f"font-size: 24px; font-weight: 600; color: {theme.TEXT_FAINT};")
+            self.faults.set_value("—", theme.TEXT_FAINT)
         else:
-            worst = next((s for s in ("critical", "warning", "info") if any(f.severity == s for f in present)), None)
-            hex_code = SEVERITY_COLORS[worst] if worst else theme.TEXT
-            self.faults_label.setText(str(len(present)) if present else "None")
-            self.faults_label.setStyleSheet(f"font-size: 24px; font-weight: 600; color: {hex_code};")
+            worst = worst_severity(present)
+            self.faults.set_value(str(len(present)) if present else "None",
+                                  SEVERITY_COLORS[worst] if worst else theme.TEXT)
 
-        for card in self.segment_cards:
-            seg_cells = [data.values.get(cell_id(n)) for n in layout.segment_cells(card.segment)]
-            seg_temps = [data.values.get(temp_id(t.number)) for t in layout.segment_thermistors(card.segment)]
+        for segment in range(1, layout.segments + 1):
+            seg_cells = [data.values.get(cell_id(n)) for n in layout.segment_cells(segment)]
+            seg_temps = [data.values.get(temp_id(t.number)) for t in layout.segment_thermistors(segment)]
             seg_cells = [v for v in seg_cells if v is not None]
             seg_temps = [v for v in seg_temps if v is not None]
-            stale = any(data.is_stale(cell_id(n)) for n in layout.segment_cells(card.segment))
+            stale = any(data.is_stale(cell_id(n)) for n in layout.segment_cells(segment))
+            name = (f"Segment {segment}", theme.TEXT)
             if not seg_cells or stale:
-                hex_code = theme.STALE if seg_cells else theme.TEXT_FAINT
-                card.voltage.setText(colored("Cells —" if not seg_cells else "Cells stale", hex_code))
-                card.temp.setText(colored("Temperature —" if not seg_temps else "Temperature stale", hex_code))
+                gap = ("Stale", theme.STALE) if seg_cells else ("—", theme.TEXT_FAINT)
+                self.segments.set_row(segment - 1, [name, gap, gap, gap, gap])
                 continue
             lo, hi = min(seg_cells), max(seg_cells)
-            worst = max((cell_level(lo, cfg), cell_level(hi, cfg)), key=["normal", "warn", "fault"].index)
-            card.voltage.setText(colored(f"{lo:.3f} – {hi:.3f} V", level_hex(worst))
-                                 + colored(f"  Δ {(hi - lo) * 1000:.0f} mV", theme.TEXT_MUTED))
             t_hi = max(seg_temps) if seg_temps else None
-            if t_hi is not None:
-                card.temp.setText(colored(f"{t_hi:.1f} °C max", level_hex(temp_level(t_hi, cfg))))
+            self.segments.set_row(segment - 1, [
+                name,
+                (f"{lo:.3f} V", level_color(cell_level(lo, cfg))),
+                (f"{hi:.3f} V", level_color(cell_level(hi, cfg))),
+                (f"{(hi - lo) * 1000:.0f} mV", theme.TEXT_MUTED),
+                ("—", theme.TEXT_FAINT) if t_hi is None else (f"{t_hi:.1f} °C", level_color(temp_level(t_hi, cfg))),
+            ])
 
         self.connection.setText(f"Connected to {data.link_name}" if data.connected else "Not connected")
-        self.device.setText("<br>".join(f"{k}: <span style='color:{theme.TEXT}'>{v}</span>"
-                                        for k, v in data.device.items()) or "No device information")
+        self.device.setText(device_html(data.device) or "No device information")
