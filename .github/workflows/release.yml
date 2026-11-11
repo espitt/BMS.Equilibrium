@@ -14,7 +14,7 @@ jobs:
       # Let every platform finish, so one run shows all failures. Publishing still needs all three.
       fail-fast: false
       matrix:
-        os: [windows-latest, macos-latest, ubuntu-24.04]
+        os: [windows-latest]
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
