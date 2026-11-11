@@ -1,4 +1,7 @@
-"""The games card on the Charging screen: choose a game, see the score, and stop play when the pack needs attention."""
+"""The games card on the Charging screen: choose a game, see the score, and stop play when the pack needs attention.
+
+The player's best scores go on the leaderboard shared by everyone with the app (see board.py).
+"""
 
 from __future__ import annotations
 
@@ -7,6 +10,7 @@ from PySide6.QtWidgets import QComboBox, QHBoxLayout
 
 from equilibrium.ui.games.base import Game
 from equilibrium.ui.games.blocks import Blocks
+from equilibrium.ui.games.board import LeaderboardPanel
 from equilibrium.ui.games.bricks import Bricks
 from equilibrium.ui.games.merge import Merge
 from equilibrium.ui.games.mines import Mines
@@ -45,6 +49,10 @@ class Arcade(Card):
         self.level = QComboBox()
         row.addWidget(self.level)
         row.addStretch(1)
+        self.board_button = button("Leaderboard", self._show_board, tooltip="Show or hide the shared leaderboard")
+        self.board_button.setCheckable(True)
+        self.board_button.setChecked(True)
+        row.addWidget(self.board_button)
         self.new_button = button("New game", self._new_game)
         row.addWidget(self.new_button)
         self.pause_button = button("Pause", self._toggle_pause)
@@ -52,6 +60,12 @@ class Arcade(Card):
         self.box.addLayout(row)
         self.score = label("", "muted")
         self.box.addWidget(self.score)
+        self.stage = QHBoxLayout()  # The game, with the leaderboard to its right
+        self.stage.setSpacing(12)
+        self.box.addLayout(self.stage, 1)
+        self.board = LeaderboardPanel(str(_settings().value("games/player") or ""))
+        self.board.nameChanged.connect(self._name_changed)
+        self.stage.addWidget(self.board)
         self.hint = label("", "faint", wrap=True)
 
         last = _number(_settings().value("games/last"))
@@ -82,15 +96,16 @@ class Arcade(Card):
             self.level.setVisible(bool(cls.levels))
             self.level.blockSignals(False)
         if self.game is not None:
-            self.box.removeWidget(self.game)
+            self.stage.removeWidget(self.game)
             self.game.hide()
             self.game.deleteLater()
         self.game = cls(max(0, level))
         self.game.scoreChanged.connect(self._on_score)
         self.game.stateChanged.connect(self._on_state)
         self.game.set_hold(self.hold)
-        self.box.insertWidget(3, self.game, 1)
+        self.stage.insertWidget(0, self.game, 1)
         self.hint.setText(cls.controls)
+        self.board.show_board(self._board_key(), cls.title, self.best())
         self._on_score(0)
         self._on_state()
         self.game.setFocus()
@@ -106,10 +121,19 @@ class Arcade(Card):
             self.game.go()
             self.game.setFocus()
 
-    # Scores. The best is kept for each game and level.
+    # Scores. The best is kept for each game and level, and shared on that game and level's leaderboard.
+
+    def _board_key(self) -> str:
+        return f"{type(self.game).__name__.lower()}/{self.game.level}"
 
     def _best_key(self) -> str:
-        return f"games/{type(self.game).__name__.lower()}/{self.game.level}/best"
+        return f"games/{self._board_key()}/best"
+
+    def _show_board(self, on: bool) -> None:
+        self.board.setVisible(on)
+
+    def _name_changed(self, name: str) -> None:
+        _settings().setValue("games/player", name)
 
     def best(self) -> int:
         return _number(_settings().value(self._best_key()))
@@ -125,6 +149,8 @@ class Arcade(Card):
         game = self.game
         self.pause_button.setText("Pause" if game.active else "Resume")
         self.pause_button.setEnabled(not game.hold and not game.over)
+        if game.over:  # A finished game is the moment to share a new best.
+            self.board.set_best(self.best())
 
     # Safety
 
