@@ -15,7 +15,7 @@ Done (see "Before you switch" below for getting it onto the new PC):
 - 67 tests pass (`tests/test_bms.py` builds and paints every screen offscreen).
 
 - Browsing firmware releases (9 Nov 2026), on the Settings screen's "BMS firmware" card. It lists
-  every release in `espitt/BMS.Firmware` (`firmware.REPO`), newest first: version, date,
+  every release in `sufst/BMS-Firmware` (`firmware.REPO`), newest first: version, date,
   "Pre-release" / "Installed" tags, and the description on the same line.
   Code: `app/equilibrium/firmware.py` (no GUI) and `ui/firmware_browser.py`; tests in
   `tests/test_firmware.py`. Changed from this plan:
@@ -101,7 +101,7 @@ This mirrors how the app already updates itself (`installer/equilibrium_setup/co
 
 | Question | Why it matters | Default if unanswered |
 |---|---|---|
-| Firmware repo name | The app needs to know where to look | **Answered:** `espitt/BMS.Firmware`, fixed in `firmware.REPO` |
+| Firmware repo name | The app needs to know where to look | **Answered:** `sufst/BMS-Firmware`, fixed in `firmware.REPO` |
 | Is that repo public or private? | Private repos need a read-only GitHub token | **Answered:** public, so the app sends no token |
 | Microcontroller on the master board | Decides the bootloader (custom serial vs STM32 USB DFU) | Not needed for the browser itself |
 

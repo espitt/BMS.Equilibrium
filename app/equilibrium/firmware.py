@@ -32,7 +32,7 @@ except ImportError:  # A source run: the installer package sits beside the app r
 
 log = logging.getLogger(__name__)
 
-REPO = "espitt/BMS.Firmware"  # Public, so no GitHub token is needed
+REPO = "sufst/BMS-Firmware"  # Public, so no GitHub token is needed
 API_ROOT = "https://api.github.com"
 API_HEADERS = {"Accept": "application/vnd.github+json", "X-GitHub-Api-Version": "2022-11-28"}
 PER_PAGE = 30
