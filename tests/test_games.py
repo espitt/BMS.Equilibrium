@@ -20,6 +20,8 @@ from equilibrium.ui.games import arcade, blocks, merge, mines, rocks, runner, sn
 from equilibrium.ui.games.arcade import GAMES, Arcade  # noqa: E402
 from equilibrium.ui.games.blocks import Blocks  # noqa: E402
 from equilibrium.ui.games.bricks import Bricks  # noqa: E402
+from equilibrium.ui.games import glider  # noqa: E402
+from equilibrium.ui.games.glider import Glider  # noqa: E402
 from equilibrium.ui.games.merge import Merge  # noqa: E402
 from equilibrium.ui.games.mines import Mines  # noqa: E402
 from equilibrium.ui.games.rocks import Rocks  # noqa: E402
@@ -489,6 +491,65 @@ class RocksTests(GameTest):
         run(game, 0.5)
         self.assertGreater(game.angle, 0)
         self.assertGreater(game.vx, 0)
+
+
+class GliderTests(GameTest):
+    def test_taps_lift_it_and_it_falls_without_them(self):
+        game = Glider(seed=11)
+        game.go()
+        game.next_wall = 1e9  # No walls yet
+        start = game.altitude
+        run(game, 0.1)
+        self.assertLess(game.altitude, start, "it begins with a small hop")
+        game.vy = 0.0
+        run(game, 0.3)
+        low = game.altitude
+        self.assertGreater(low, start, "then falls")
+        press(game, K.Key_Space)
+        run(game, 0.2)
+        self.assertLess(game.altitude, low)
+        game.click(QPointF(10, 10), Qt.MouseButton.LeftButton)
+        self.assertEqual(game.vy, -glider.LIFT)
+        run(game, 3)
+        self.assertTrue(game.over, "left alone, it hits the ground")
+
+    def test_the_gap_scores_and_the_wall_ends_the_game(self):
+        game = Glider(seed=11)
+        game.go()
+        game.next_wall = 1e9
+
+        def fly_at(altitude: float) -> None:
+            game.walls = [[glider.GLIDER_X + 40, 200.0, 120.0]]
+            for _ in range(200):
+                game.altitude, game.vy = altitude, 0.0  # Held level
+                game.tick(DT)
+                if game.over or not game.walls:
+                    break
+
+        fly_at(260.0)  # The middle of the gap
+        self.assertFalse(game.over)
+        self.assertEqual((game.score, game.passed), (1, 1))
+        fly_at(150.0)  # Above the gap
+        self.assertTrue(game.over)
+        self.assertEqual(game.score, 1)
+
+    def test_walls_keep_coming_with_gaps_that_can_be_flown(self):
+        game = Glider(seed=11)
+        game.go()
+        gaps = []
+        for _ in range(3000):
+            if game.walls:  # Steer for the middle of the next gap
+                left, top, gap = next(w for w in game.walls if w[0] + glider.WALL_W > glider.GLIDER_X - 20)
+                game.altitude, game.vy = top + gap / 2, 0.0
+                gaps.append(gap)
+            game.tick(DT)
+        self.assertFalse(game.over)
+        self.assertGreater(game.score, 20)
+        self.assertEqual(max(gaps), glider.START_GAP)
+        self.assertEqual(min(gaps), glider.SMALLEST_GAP, "the gaps narrow, but only so far")
+        self.assertEqual(game.speed, glider.TOP_SPEED)
+        self.assertTrue(all(glider.EDGE <= top and top + gap <= glider.HEIGHT - glider.EDGE
+                            for _, top, gap in game.walls))
 
 
 class RunnerTests(GameTest):

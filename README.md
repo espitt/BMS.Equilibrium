@@ -28,7 +28,7 @@ cancelled, the previous version reopens.
   - `firmware.py`: lists the BMS firmware releases on GitHub (browsed in `ui/firmware_browser.py`,
     on the Settings screen; see `docs/firmware-release-browser.md`)
   - `ui/`: the main window, start screen and one module per screen in `ui/screens/`
-  - `ui/games/`: ten minigames for the Charging screen (the "Games" button). They sit beside a condensed column of the
+  - `ui/games/`: eleven minigames for the Charging screen (the "Games" button). They sit beside a condensed column of the
     charging stats, never over them, and stop while there is a fault, stale data or no BMS
   - `leaderboard.py`: the minigame leaderboard shared by everyone with the app, kept in a GitHub
     repository (shown by `ui/games/board.py`; setup in `docs/leaderboard.md`)

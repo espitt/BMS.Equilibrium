@@ -12,6 +12,7 @@ from equilibrium.ui.games.base import Game
 from equilibrium.ui.games.blocks import Blocks
 from equilibrium.ui.games.board import LeaderboardPanel
 from equilibrium.ui.games.bricks import Bricks
+from equilibrium.ui.games.glider import Glider
 from equilibrium.ui.games.merge import Merge
 from equilibrium.ui.games.mines import Mines
 from equilibrium.ui.games.rocks import Rocks
@@ -22,7 +23,8 @@ from equilibrium.ui.games.sudoku import Sudoku
 from equilibrium.ui.games.tennis import Tennis
 from equilibrium.ui.widgets import Card, button, label
 
-GAMES: list[type[Game]] = [Snake, Bricks, Blocks, Tennis, Rocks, Runner, Mines, Merge, Solitaire, Sudoku]
+# New games go at the end: the game played last is remembered by its place in this list.
+GAMES: list[type[Game]] = [Snake, Bricks, Blocks, Tennis, Rocks, Runner, Mines, Merge, Solitaire, Sudoku, Glider]
 
 
 def _settings() -> QSettings:
